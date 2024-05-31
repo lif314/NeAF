@@ -1,5 +1,4 @@
 import torch
-from torch import nn
 from opt import get_opts
 
 # datasets
@@ -160,7 +159,6 @@ class CoordMLPSystem(LightningModule):
         
         t = torch.cat([x['t'] for x in self.validation_step_outputs])
         
-
         fig, axes = plt.subplots(1,2)
         axes[0].plot(t.squeeze().detach().cpu().numpy(), a_gt.squeeze().detach().cpu().numpy())
         axes[1].plot(t.squeeze().detach().cpu().numpy(), a_pred.squeeze().detach().cpu().numpy())       
