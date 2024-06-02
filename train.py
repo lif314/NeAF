@@ -6,10 +6,10 @@ from dataset import AudioDataset
 from torch.utils.data import DataLoader
 
 # models
-from models import PE, MLP, KAN, Siren, GaborNet, MultiscaleBACON
+from models import PE, MLP, KAN, Siren, HybridNet
 
 # metrics
-from metrics import mse
+from metrics import mse, calc_snr, compute_log_distortion
 
 # optimizer
 from torch.optim import Adam
@@ -27,7 +27,6 @@ def get_learning_rate(optimizer):
     for param_group in optimizer.param_groups:
         return param_group['lr']
 
-
 class CoordMLPSystem(LightningModule):
     def __init__(self, hparams):
         super().__init__()
@@ -36,7 +35,7 @@ class CoordMLPSystem(LightningModule):
         self.validation_step_outputs = []
 
         if hparams.use_pe:
-            P = torch.cat([torch.tensor(1)*2**i for i in range(10)], 1) # (2, 2*10)
+            P = [torch.tensor(1)*2**i for i in range(10)] # (1, 2*10)
             self.pe = PE(P)
 
         if hparams.arch in ['relu', 'gaussian', 'quadratic',
@@ -47,44 +46,43 @@ class CoordMLPSystem(LightningModule):
             if hparams.use_pe:
                 n_in = self.pe.out_dim
             else:
-                n_in = 1
-            self.mlp = MLP(n_in=n_in, act=act, n_out=hparams.n_out,
+                n_in = hparams.in_features
+            self.mlp = MLP(n_in=n_in,
+                           act=act,
+                           n_out=hparams.out_features,
                            act_trainable=hparams.act_trainable,
                            **kwargs)
 
         elif hparams.arch == 'ff':
-            P = hparams.sc*torch.normal(torch.zeros(1, 256),
-                                        torch.ones(1, 256)) # (2, 256)
+            P = hparams.sc * torch.normal(torch.zeros(1, 256))  # (1, 256)
             self.pe = PE(P)
             self.mlp = MLP(n_in=self.pe.out_dim,
-                           n_out=hparams.n_out)
+                           n_out=hparams.out_features)
 
         elif hparams.arch == 'siren':
-            self.mlp = Siren(in_features=1,
-                             first_omega_0=hparams.omega_0,
-                             hidden_omega_0=hparams.omega_0,
-                             out_features=hparams.n_out)
-
-        elif hparams.arch == 'gabor':
-            self.mlp = GaborNet(in_size=1,
-                                input_scale=max(hparams.img_wh)/4, 
-                                out_size=hparams.n_out)
-
-        elif hparams.arch == 'bacon':
-            self.mlp = MultiscaleBACON(
-                    frequency=[hparams.img_wh[0]//4, hparams.img_wh[1]//4], out_size=hparams.n_out)
+            self.mlp = Siren(in_features=hparams.in_features,
+                             first_omega_0=hparams.first_omega_0,
+                             hidden_omega_0=hparams.hidden_omega_0,
+                             out_features=hparams.out_features)
         
         elif hparams.arch == 'kan':
             if hparams.use_pe:
                 n_in = self.pe.out_dim
             else:
-                n_in = 1
-            self.mlp = KAN(n_in=n_in,
-                           n_out=hparams.n_out,
-                           n_layers=hparams.kan_layers,
-                           n_hidden_units=hparams.kan_hidden_dim,
-                           basis=hparams.kan_basis,
-                           use_kan_pe=hparams.use_kan_pe)
+                n_in = hparams.in_features
+            self.mlp = KAN( in_features=n_in,
+                        hidden_features=hparams.hidden_features,
+                        hidden_layers=hparams.hidden_layers,
+                        out_features=hparams.out_features)
+        elif hparams.arch == 'hybrid':
+            if hparams.use_pe:
+                n_in = self.pe.out_dim
+            else:
+                n_in = hparams.in_features
+            self.mlp = HybridNet(in_features=n_in,
+                        hidden_features=hparams.hidden_features,
+                        hidden_layers=hparams.hidden_layers,
+                        out_features=hparams.out_features)
 
         print("Model: ", self.mlp)
 
@@ -95,6 +93,7 @@ class CoordMLPSystem(LightningModule):
         
     def setup(self, stage=None):
         self.dataset = AudioDataset(wav_path=hparams.wav_path)
+        self.rate = self.dataset.rate
 
     def train_dataloader(self):
         return DataLoader(self.dataset,
@@ -119,26 +118,20 @@ class CoordMLPSystem(LightningModule):
     def training_step(self, batch, batch_idx):
         a_pred = self(batch['t'])['model_out']
 
-        if hparams.arch=='bacon':
-            loss = sum(mse(x, batch['a']) for x in a_pred)
-        else:
-            loss = mse(a_pred, batch['a'])
+        loss = mse(a_pred, batch['a'])
 
-        psnr_ = -10*torch.log10(loss)
+        snr_ = calc_snr(a_pred, batch['a'])
 
         self.log('lr', self.opt.param_groups[0]['lr'])
         self.log('train/loss', loss, prog_bar=True)
-        self.log('train/psnr', psnr_, prog_bar=True)
+        self.log('train/snr', snr_, prog_bar=True)
 
         return loss
 
     def validation_step(self, batch, batch_idx):
         a_pred = self(batch['t'])['model_out']
 
-        if hparams.arch=='bacon':
-            loss = mse(a_pred[-1], batch['a'], reduction='none')
-        else:
-            loss = mse(a_pred, batch['a'], reduction='none')
+        loss = mse(a_pred, batch['a'], reduction='none')
 
         log = {'val_loss': loss,
                't': batch['t'],
@@ -153,9 +146,12 @@ class CoordMLPSystem(LightningModule):
 
     def on_validation_epoch_end(self):
         mean_loss = torch.cat([x['val_loss'] for x in self.validation_step_outputs]).mean()
-        mean_psnr = -10*torch.log10(mean_loss)
+        # mean_psnr = -10*torch.log10(mean_loss)
         a_gt = torch.cat([x['a_gt'] for x in self.validation_step_outputs])
         a_pred = torch.cat([x['a_pred'] for x in self.validation_step_outputs])
+        
+        mean_snr = calc_snr(a_pred.detach().clone(), a_gt)
+        mean_lsd = compute_log_distortion(a_pred.detach().clone().cpu(), a_gt.cpu())
         
         t = torch.cat([x['t'] for x in self.validation_step_outputs])
         
@@ -168,7 +164,8 @@ class CoordMLPSystem(LightningModule):
                                           self.global_step)
 
         self.log('val/loss', mean_loss, prog_bar=True)
-        self.log('val/psnr', mean_psnr, prog_bar=True)
+        self.log('val/snr', mean_snr, prog_bar=True)
+        self.log('val/lsd', mean_lsd, prog_bar=True)
         
         self.validation_step_outputs.clear()  # free memory
 

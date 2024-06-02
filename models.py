@@ -1,14 +1,17 @@
 import torch
 from torch import nn
 import numpy as np
-from einops import rearrange
+import torchaudio
+import math
 
 class MLP(nn.Module):
     def __init__(self,
                  n_in,
                  n_out=3,
-                 n_layers=4, n_hidden_units=256,
-                 act='relu', act_trainable=False,
+                 n_layers=4,
+                 n_hidden_units=256,
+                 act='relu',
+                 act_trainable=False,
                  **kwargs):
         super().__init__()
 
@@ -54,29 +57,62 @@ class MLP(nn.Module):
         return {'model_in': coords_org, 'model_out': self.net(coords)}  # (B, 3) rgb
 
 
-class FourierKANLayer(nn.Module):
-    def __init__( self, inputdim, outdim, gridsize=8,addbias=True):
+#This is inspired by Kolmogorov-Arnold Networks but using 1d fourier coefficients instead of splines coefficients
+#It should be easier to optimize as fourier are more dense than spline (global vs local)
+#Once convergence is reached you can replace the 1d function with spline approximation for faster evaluation giving almost the same result
+#The other advantage of using fourier over spline is that the function are periodic, and therefore more numerically bounded
+#Avoiding the issues of going out of grid
+
+class FourierKANLayer(torch.nn.Module):
+    def __init__( self, inputdim, outdim, gridsize=8, addbias=True, smooth_initialization=False, is_first=False, omega=30.):
         super(FourierKANLayer,self).__init__()
         self.gridsize= gridsize
         self.addbias = addbias
         self.inputdim = inputdim
         self.outdim = outdim
+        self.is_first = is_first
+        self.omega = omega
         
-        self.fouriercoeffs = torch.nn.Parameter(torch.randn(2,outdim,inputdim,gridsize) / 
-                                             (np.sqrt(inputdim) * np.sqrt(self.gridsize) ) )
-        if self.addbias:
-            self.bias  = torch.nn.Parameter(torch.zeros(1,outdim))
+        # With smooth_initialization, fourier coefficients are attenuated by the square of their frequency.
+        # This makes KAN's scalar functions smooth at initialization.
+        # Without smooth_initialization, high gridsizes will lead to high-frequency scalar functions,
+        # with high derivatives and low correlation between similar inputs.
+        self.grid_norm_factor = (torch.arange(gridsize) + 1)**2 if smooth_initialization else np.sqrt(gridsize)
+        
+        #The normalization has been chosen so that if given inputs where each coordinate is of unit variance,
+        #then each coordinates of the output is of unit variance 
+        #independently of the various sizes
+        self.fouriercoeffs = torch.nn.Parameter( torch.randn(2,outdim,inputdim,gridsize) / 
+                                                (np.sqrt(inputdim) * self.grid_norm_factor ) )
+        
+        # self.k = nn.Parameter(torch.randn(1, 1, 1, 1) * self.omega)
 
+        if( self.addbias ):
+            self.bias  = torch.nn.Parameter( torch.zeros(1,outdim))
+        
+    #     self.init_weights()
+    
+    # def init_weights(self):
+    #     with torch.no_grad():
+    #         if self.is_first:
+    #             nn.init.uniform_(self.fouriercoeffs, -1 / (np.sqrt(self.inputdim) * self.grid_norm_factor ), 
+    #                                               1 / (np.sqrt(self.inputdim) * self.grid_norm_factor ))      
+    #         else:
+    #            nn.init.uniform_(self.fouriercoeffs, -np.sqrt(6 / self.inputdim) / self.omega, 
+    #                                          np.sqrt(6 / self.inputdim) / self.omega)
+
+    #x.shape ( ... , indim ) 
+    #out.shape ( ..., outdim)
     def forward(self,x):
         xshp = x.shape
         outshape = xshp[0:-1]+(self.outdim,)
         x = torch.reshape(x,(-1,self.inputdim))
         #Starting at 1 because constant terms are in the bias
         k = torch.reshape(torch.arange(1,self.gridsize+1,device=x.device),(1,1,1,self.gridsize))
-        xrshp = torch.reshape(x,(x.shape[0],1,x.shape[1],1))
+        xrshp = torch.reshape(x,(x.shape[0],1,x.shape[1],1) ) 
         #This should be fused to avoid materializing memory
-        c = torch.cos( k*xrshp )
-        s = torch.sin( k*xrshp )
+        c = torch.cos(k * xrshp )
+        s = torch.sin(k * xrshp )
         #We compute the interpolation of the various functions defined by their fourier coefficient for each input coordinates and we sum them 
         y =  torch.sum( c*self.fouriercoeffs[0:1],(-2,-1)) 
         y += torch.sum( s*self.fouriercoeffs[1:2],(-2,-1))
@@ -96,42 +132,35 @@ class FourierKANLayer(nn.Module):
         print("diff")
         print(diff) #should be ~0
         '''
-        y = torch.reshape(y, outshape)
+        y = torch.reshape( y, outshape)
         return y
+
 
 class KAN(nn.Module):
     def __init__(self,
-                 n_in,
-                 n_out=3,
-                 n_layers=4, n_hidden_units=256,
-                 basis='fourier', use_kan_pe=False,
-                 **kwargs):
+                 in_features=1,
+                 hidden_features=64,
+                 hidden_layers=3,
+                 out_features=1):
         super().__init__()
 
-        layers = []
-        for i in range(n_layers):
+        self.net = []
+       
+        self.net.append(FourierKANLayer(in_features, hidden_features, is_first=True, omega=3000.))
+        # self.net.append(nn.Linear(hidden_features, hidden_features))
+        
+        for _ in range(hidden_layers):
+             self.net.append(FourierKANLayer(hidden_features, hidden_features, omega=30.))
+            #  self.net.append(nn.Linear(hidden_features, hidden_features))
+            #  self.net.append(nn.LayerNorm(hidden_features))
 
-            if i == 0:
-                l = FourierKANLayer(n_in, n_hidden_units)
-            elif 0 < i < n_layers-1:
-                if use_kan_pe:
-                    l = nn.Linear(n_hidden_units, n_hidden_units)
-                else:
-                    l = FourierKANLayer(n_hidden_units, n_hidden_units)
+        self.net.append(FourierKANLayer(hidden_features, out_features))
 
-            if i < n_layers-1:
-                layers += [l]
-            else:
-                if use_kan_pe:
-                    layers += [nn.Linear(n_hidden_units, n_out)]
-                else:
-                    layers += [FourierKANLayer(n_hidden_units, n_out)]
-
-        self.net = nn.Sequential(*layers)
+        self.net = nn.Sequential(*self.net)
 
     def forward(self, x):
         """
-        x: (B, 1) # pixel uv (normalized)
+        t: (B, 1) #  (normalized)
         """
         # Enables us to compute gradients w.r.t. coordinates
         coords_org = x.clone().detach().requires_grad_(True)
@@ -144,10 +173,47 @@ class KAN(nn.Module):
         else:
             output = self.net(coords)
         
-        # print("coords:", coords.shape)
-        
-        return {'model_in': coords_org, 'model_out':  output}  # (B, 3) rgb
+        return {'model_in': coords_org, 'model_out':  output}
 
+
+class HybridNet(nn.Module):
+    def __init__(self,
+                 in_features=1,
+                 hidden_features=64,
+                 hidden_layers=3,
+                 out_features=1):
+        super().__init__()
+
+        self.net = []
+        self.net.append(nn.Linear(in_features, hidden_features))
+        # self.net.append(nn.LayerNorm(hidden_features))
+        
+        for _ in range(hidden_layers):
+             self.net.append(FourierKANLayer(hidden_features, hidden_features))
+             self.net.append(nn.Linear(hidden_features, hidden_features))
+
+
+        # print("hidden_dim:", hidden_features)
+        self.net.append(nn.Linear(hidden_features, out_features))
+
+        self.net = nn.Sequential(*self.net)
+
+    def forward(self, x):
+        """
+        x: (B, 1)
+        """
+        # Enables us to compute gradients w.r.t. coordinates
+        coords_org = x.clone().detach().requires_grad_(True)
+        coords = coords_org
+        
+        output = None
+        if x.dim() == 3:
+            coords = coords.squeeze(0)
+            output = self.net(coords).unsqueeze(0)
+        else:
+            output = self.net(coords)
+        
+        return {'model_in': coords_org, 'model_out':  output}
 
 class PE(nn.Module):
     """
@@ -170,7 +236,54 @@ class PE(nn.Module):
         """
         x_ = 2*np.pi*x @ self.P # (B, F)
         return torch.cat([torch.sin(x_), torch.cos(x_)], 1) # (B, 2*F)
+    
 
+class PosEncodingNeRF(nn.Module):
+    '''Module to add positional encoding as in NeRF [Mildenhall et al. 2020].'''
+
+    def __init__(self, in_features, sidelength=None, fn_samples=None, use_nyquist=True, num_frequencies=None, scale=2):
+        super().__init__()
+
+        self.in_features = in_features
+        self.scale = scale
+        self.sidelength = sidelength
+        if num_frequencies == None:
+            if self.in_features == 3:
+                self.num_frequencies = 10
+            elif self.in_features == 2:
+                assert sidelength is not None
+                if isinstance(sidelength, int):
+                    sidelength = (sidelength, sidelength)
+                self.num_frequencies = 4
+                if use_nyquist:
+                    self.num_frequencies = self.get_num_frequencies_nyquist(min(sidelength[0], sidelength[1]))
+            elif self.in_features == 1:
+                assert fn_samples is not None
+                self.num_frequencies = 4
+                if use_nyquist:
+                    self.num_frequencies = self.get_num_frequencies_nyquist(fn_samples)
+        else:
+            self.num_frequencies = num_frequencies
+        # self.frequencies_per_axis = (num_frequencies * np.array(sidelength)) // max(sidelength)
+        self.out_dim = in_features + in_features * 2 * self.num_frequencies  # (sum(self.frequencies_per_axis))
+
+    def get_num_frequencies_nyquist(self, samples):
+        nyquist_rate = 1 / (2 * (2 * 1 / samples))
+        return int(np.floor(np.log2(nyquist_rate)))
+
+    def forward(self, coords):
+        coords_pos_enc = coords
+        for i in range(self.num_frequencies):
+
+            for j in range(self.in_features):
+                c = coords[..., j]
+
+                sin = torch.unsqueeze(torch.sin((self.scale ** i) * np.pi * c), -1)
+                cos = torch.unsqueeze(torch.cos((self.scale ** i) * np.pi * c), -1)
+
+                coords_pos_enc = torch.cat((coords_pos_enc, sin, cos), axis=-1)
+
+        return coords_pos_enc
 
 class SineLayer(nn.Module):
     # See paper sec. 3.2, final paragraph, and supplement Sec. 1.5 for discussion of omega_0.
@@ -181,6 +294,7 @@ class SineLayer(nn.Module):
     
     # If is_first=False, then the weights will be divided by omega_0 so as to keep the magnitude of 
     # activations constant, but boost gradients to the weight matrix (see supplement Sec. 1.5)
+    
     def __init__(self, in_features, out_features, bias=True,
                  is_first=False, omega_0=30):
         super().__init__()
@@ -198,21 +312,21 @@ class SineLayer(nn.Module):
                 self.linear.weight.uniform_(-1 / self.in_features, 
                                              1 / self.in_features)      
             else:
-                self.linear.weight.uniform_(-np.sqrt(6/self.in_features) / self.omega_0, 
-                                             np.sqrt(6/self.in_features) / self.omega_0)
+                self.linear.weight.uniform_(-np.sqrt(6 / self.in_features) / self.omega_0, 
+                                             np.sqrt(6 / self.in_features) / self.omega_0)
         
-    def forward(self, x):
-        return torch.sin(self.omega_0 * self.linear(x))
-    
-    
+    def forward(self, input):
+        return torch.sin(self.omega_0 * self.linear(input))
+
+
 class Siren(nn.Module):
     def __init__(self,
-                 in_features=2,
-                 out_features=3,
+                 in_features=1,
                  hidden_features=256,
-                 hidden_layers=4,
-                 outermost_linear=False, 
-                 first_omega_0=30,
+                 hidden_layers=3,
+                 out_features=1,
+                 outermost_linear=True, 
+                 first_omega_0=3000,
                  hidden_omega_0=30.):
         super().__init__()
         
@@ -238,14 +352,10 @@ class Siren(nn.Module):
         
         self.net = nn.Sequential(*self.net)
     
-    def forward(self, x):
-        # Enables us to compute gradients w.r.t. coordinates
-        coords_org = x.clone().detach().requires_grad_(True)
-        coords = coords_org
-        # print("coords: ", coords.shape)
-
-        return {'model_in': coords_org, 'model_out': self.net(coords)}  # (B, 3) rgb
-        # return self.net(x)
+    def forward(self, coords):
+        coords = coords.clone().detach().requires_grad_(True) # allows to take derivative w.r.t. input
+        output = self.net(coords)
+        return {'model_in': coords, 'model_out': output}   
 
 
 # different activation functions
@@ -302,152 +412,3 @@ class ExpSinActivation(nn.Module):
 
     def forward(self, x):
         return torch.exp(-torch.sin(self.a*x))
-
-
-# from https://github.com/boschresearch/multiplicative-filter-networks/blob/main/mfn/mfn.py
-class GaborLayer(nn.Module):
-    def __init__(self, in_features, out_features, weight_scale, alpha):
-        super().__init__()
-        self.linear = nn.Linear(in_features, out_features)
-        self.mu = nn.Parameter(2*torch.rand(1, out_features, in_features)-1)
-        self.gamma = nn.Parameter(
-            torch.distributions.gamma.Gamma(alpha, 1.0).sample((out_features,)))
-        self.linear.weight.data *= weight_scale*self.gamma[:, None]**0.5
-        self.linear.bias.data.uniform_(-np.pi, np.pi)
-
-    def forward(self, x):
-        D = torch.norm(rearrange(x, 'b d -> b 1 d')-self.mu, dim=-1)**2
-        return torch.sin(self.linear(x)) * torch.exp(-0.5*D*self.gamma[None])
-
-
-class GaborNet(nn.Module):
-    def __init__(
-        self,
-        in_size=2,
-        out_size=3,
-        hidden_size=256,
-        n_layers=4,
-        input_scale=256.0,
-        alpha=6.0):
-        super().__init__()
-
-        self.linear = nn.ModuleList(
-            [nn.Linear(hidden_size, hidden_size) for _ in range(n_layers)]
-        )
-        self.output_linear = \
-            nn.Sequential(nn.Linear(hidden_size, out_size),
-                          nn.Sigmoid())
-
-        self.filters = nn.ModuleList(
-            [
-                GaborLayer(
-                    in_size,
-                    hidden_size,
-                    input_scale / np.sqrt(n_layers + 1),
-                    alpha / (n_layers + 1)
-                )
-                for _ in range(n_layers + 1)
-            ]
-        )
-
-    def forward(self, x):
-        # Enables us to compute gradients w.r.t. coordinates
-        coords_org = x.clone().detach().requires_grad_(True)
-        x = coords_org
-
-        out = self.filters[0](x)
-        for i in range(1, len(self.filters)):
-            out = self.filters[i](x) * self.linear[i-1](out)
-        out = self.output_linear(out)
-        return {'model_in': coords_org, 'model_out': out}  # (B, 3) rgb
-        # return out
-
-
-# from https://github.com/computational-imaging/bacon/blob/main/modules.py
-def mfn_weights_init(m):
-    with torch.no_grad():
-        if hasattr(m, 'weight'):
-            num_input = m.weight.size(-1)
-            m.weight.uniform_(-(12/num_input)**0.5, (12/num_input)**0.5)
-
-
-class GaborLayer_Bacon(nn.Module):
-    def __init__(self, in_features, out_features, weight_scale, alpha,
-                 quantization_interval):
-        super().__init__()
-        self.linear = nn.Linear(in_features, out_features)
-
-        self.mu = nn.Parameter(2*torch.rand(1, out_features, in_features)-1)
-        self.gamma = nn.Parameter(
-            torch.distributions.gamma.Gamma(alpha, 1.0).sample((out_features,)))
-
-        # sample discrete frequencies to ensure coverage
-        for i in range(in_features):
-            init = torch.randint_like(
-                self.linear.weight.data[:, i],
-                int(2*weight_scale[i]/quantization_interval)+1)
-            init = init * quantization_interval - weight_scale[i]
-            self.linear.weight.data[:, i] = init*self.gamma**0.5
-
-        self.linear.weight.requires_grad = False
-        self.linear.bias.data.uniform_(-np.pi, np.pi)
-
-    def forward(self, x):
-        D = torch.norm(rearrange(x, 'b d -> b 1 d')-self.mu, dim=-1)**2
-        return torch.sin(self.linear(x)) * \
-               torch.exp(-0.5*D*rearrange(self.gamma, 'o -> 1 o'))
-
-
-class MultiscaleBACON(nn.Module):
-    def __init__(self,
-                 in_size=2,
-                 hidden_size=256,
-                 out_size=3,
-                 n_layers=4,
-                 alpha=6.0,
-                 frequency=(128, 128),
-                 quantization_interval=2*np.pi,
-                 input_scales=[1/8, 1/8, 1/4, 1/4, 1/4],
-                 output_layers=[1, 2, 4]):
-        super().__init__()
-
-        self.n_layers = n_layers
-        self.output_layers = output_layers
-
-        # we need to multiply by this to be able to fit the signal
-        input_scales = [[round((np.pi*freq*s)/quantization_interval) * \
-                         quantization_interval
-                         for freq in frequency] for s in input_scales]
-
-        self.filters = nn.ModuleList([
-                        GaborLayer_Bacon(in_size, hidden_size,
-                                         input_scales[i]/np.sqrt(n_layers+1),
-                                         alpha/(n_layers+1),
-                                         quantization_interval)
-                        for i in range(n_layers+1)])
-        self.linear = nn.ModuleList(
-            [nn.Linear(hidden_size, hidden_size) for _ in range(n_layers)])
-        self.linear.apply(mfn_weights_init)
-
-        self.out = \
-            nn.Sequential(nn.Linear(hidden_size, out_size), nn.Sigmoid()) 
-            
-        # make the final layer (after sigmoid) "almost" uniform in [0, 1]
-        # TODO: find the math formula...
-        nn.init.uniform_(self.out[0].weight,
-                         -6/hidden_size**0.5, 6/hidden_size**0.5)
-
-    def forward(self, x):
-         # Enables us to compute gradients w.r.t. coordinates
-        coords_org = x.clone().detach().requires_grad_(True)
-        x = coords_org
-
-        outs = []
-        out = self.filters[0](x)
-        for i in range(1, len(self.filters)):
-            out = self.filters[i](x) * self.linear[i-1](out)
-            if i in self.output_layers:
-                outs += [self.out(out)]
-
-        return {'model_in': coords_org, 'model_out': outs}  # (B, 3) rgb
-        # return outs

@@ -13,7 +13,7 @@ def get_mgrid(sidelen, dim=2):
     return mgrid
 
 class AudioDataset(Dataset):
-    def __init__(self, wav_path: str = "data/audio/gt_bach.wav", split: str = "train"):
+    def __init__(self, wav_path: str = "data/audio/gt_bach.wav"):
         rate, data = wavfile.read(wav_path)
         
         amplitude = data.astype(np.float32)
@@ -21,6 +21,7 @@ class AudioDataset(Dataset):
         amplitude = (amplitude / scale)
         
         # timepoints
+        self.rate = rate
         self.timepoints = get_mgrid(len(data), 1) # [N, 1]
         self.amplitude = torch.Tensor(amplitude).view(-1, 1) # [N, 1]
 

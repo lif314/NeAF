@@ -1,7 +1,4 @@
 torch
 torchvision
 pytorch_lightning
-einops
-imageio
 jupyter
-kornia
