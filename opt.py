@@ -8,7 +8,7 @@ def get_opts():
     parser.add_argument('--use_pe', default=False, action='store_true',
                         help='use positional encoding or not')
     parser.add_argument('--arch', type=str, default='identity',
-                        choices=['kan', 'hybrid', 'relu', 'ff', 'siren',
+                        choices=['fourier', 'relu', 'ff', 'siren',
                                  'gaussian', 'quadratic', 'multi-quadratic',
                                  'laplacian', 'super-gaussian', 'expsin'],
                         help='network structure')
@@ -21,7 +21,12 @@ def get_opts():
                         help='number of KAN layers')
     parser.add_argument('--hidden_features', type=int, default=64,
                         help='number of KAN hidden layer dim')
-    
+    parser.add_argument('--input_grid_size', type=int, default=512,
+                        help='number of KAN grid zise of first layer')
+    parser.add_argument('--hidden_grid_size', type=int, default=5,
+                        help='number of KAN grid zise of hidden layers')
+    parser.add_argument('--output_grid_size', type=int, default=3,
+                        help='number of KAN grid zise of output layer')
     parser.add_argument('--a', type=float, default=0.1)
     parser.add_argument('--b', type=float, default=1.)
     parser.add_argument('--act_trainable', default=False, action='store_true',

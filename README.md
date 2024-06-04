@@ -3,27 +3,14 @@
 ## Results
 
 ### `Counting`
-- `SNR` & `LSD`
 
 |Model| hidden_layers | hidden_features | params | SNR $\uparrow$| LSD $\downarrow$|
 |:--:|:--:|:--:|:--:|:--:|:---:|
-| Siren | 7 | 256 | 198K | | |
-| Fourier | 4 | 64 | 264K | |  |
-
-
-- `PSNR`
-
-|Model| hidden_layers | hidden_features | params |batch size| lr |PSNR $\uparrow$|
-|:--:|:--:|:--:|:--:|:--:|:---:|:---:|
-| Siren | 7 | 256 | 198K | 8192 | 1e-4 | 34.10 |
-| Fourier | 3 | 64 | 198K | 8192| 1e-4 | 25.40 |
-| Fourier | 3 | 64 | 198K | 1024 | 1e-4| 21.30 |
-| Fourier(LayerNorm) | 3 | 64 | 199K | 16384 | 1e-4| 23.10 |
+| Siren | 7 | 256 | 198K | 12.81 | 1.65 |
+| Fourier | 4 | 64 | 230K | 12.90 | 1.770 |
 
 
 ### `Bach`
-
-- `SNR` & `LSD`
 
 |Model| hidden_layers | hidden_features | params | SNR $\uparrow$| LSD $\downarrow$|
 |:--:|:--:|:--:|:--:|:--:|:---:|
@@ -39,18 +26,8 @@
 | Fourier,G=8 | 2 | 128 | 528K | 4.13 | 2.68 |
 | Fourier,G=5 | 5 | 64 | 206K | 12.60 | 2.33 |
 
-- `PSNR`
-
-|Model| hidden_layers | hidden_features | params |batch size| lr |PSNR $\uparrow$|
-|:--:|:--:|:--:|:--:|:--:|:---:|:---:|
-| Siren | 7 | 256 | 198K | 8192 | 1e-4 | 53.26 |
-| Fourier | 1 | 128 | 266K | 8192| 1e-4 | 17.68 |
-| Fourier | 3 | 128 | 790K | 8192| 1e-4 | 29.51 |
-| Fourier | 2 | 64 | 133K | 8192| 1e-4 | 17.68 |
-| Fourier | 3 | 64 | 198K | 8192| 1e-4 | 28.04 |
-| Fourier | 4 | 64 | 264K | 8192 | 1e-4| 39.27 |
-
 ### GTZAN (blues/00028)
+
 |Model| hidden_layers | hidden_features | params |batch size| lr |PSNR $\uparrow$|
 |:--:|:--:|:--:|:--:|:--:|:---:|:---:|
 | Siren | 7 | 256 | 198K | 8192 | 1e-4 |  |

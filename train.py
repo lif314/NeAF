@@ -6,7 +6,7 @@ from dataset import AudioDataset
 from torch.utils.data import DataLoader
 
 # models
-from models import PE, MLP, KAN, Siren, HybridNet
+from models import PE, MLP, FourierKAN, Siren, HybridNet
 
 # metrics
 from metrics import mse, calc_snr, compute_log_distortion
@@ -65,24 +65,19 @@ class CoordMLPSystem(LightningModule):
                              hidden_omega_0=hparams.hidden_omega_0,
                              out_features=hparams.out_features)
         
-        elif hparams.arch == 'kan':
+        elif hparams.arch == 'fourier':
             if hparams.use_pe:
                 n_in = self.pe.out_dim
             else:
                 n_in = hparams.in_features
-            self.mlp = KAN( in_features=n_in,
+            self.mlp = FourierKAN( in_features=n_in,
                         hidden_features=hparams.hidden_features,
                         hidden_layers=hparams.hidden_layers,
-                        out_features=hparams.out_features)
-        elif hparams.arch == 'hybrid':
-            if hparams.use_pe:
-                n_in = self.pe.out_dim
-            else:
-                n_in = hparams.in_features
-            self.mlp = HybridNet(in_features=n_in,
-                        hidden_features=hparams.hidden_features,
-                        hidden_layers=hparams.hidden_layers,
-                        out_features=hparams.out_features)
+                        out_features=hparams.out_features,
+                        input_grid_size=hparams.input_grid_size,
+                        hidden_grid_size=hparams.hidden_grid_size,
+                        output_grid_size=hparams.output_grid_size
+                    )
 
         print("Model: ", self.mlp)
 
@@ -113,7 +108,7 @@ class CoordMLPSystem(LightningModule):
         self.opt = Adam(self.mlp.parameters(), lr=self.hparams.lr)
         scheduler = CosineAnnealingLR(self.opt, hparams.num_epochs, hparams.lr/1e2)
 
-        return [self.opt], [scheduler]
+        return [self.opt] , [scheduler]
 
     def training_step(self, batch, batch_idx):
         a_pred = self(batch['t'])['model_out']

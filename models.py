@@ -64,14 +64,12 @@ class MLP(nn.Module):
 #Avoiding the issues of going out of grid
 
 class FourierKANLayer(torch.nn.Module):
-    def __init__( self, inputdim, outdim, gridsize=8, addbias=True, smooth_initialization=False, is_first=False, omega=30.):
+    def __init__( self, inputdim, outdim, gridsize=8, addbias=True, smooth_initialization=False):
         super(FourierKANLayer,self).__init__()
         self.gridsize= gridsize
         self.addbias = addbias
         self.inputdim = inputdim
         self.outdim = outdim
-        self.is_first = is_first
-        self.omega = omega
         
         # With smooth_initialization, fourier coefficients are attenuated by the square of their frequency.
         # This makes KAN's scalar functions smooth at initialization.
@@ -82,24 +80,14 @@ class FourierKANLayer(torch.nn.Module):
         #The normalization has been chosen so that if given inputs where each coordinate is of unit variance,
         #then each coordinates of the output is of unit variance 
         #independently of the various sizes
-        self.fouriercoeffs = torch.nn.Parameter( torch.randn(2,outdim,inputdim,gridsize) / 
+       
+        self.fouriercoeffs = torch.nn.Parameter( torch.randn(2, outdim, inputdim, gridsize) / 
                                                 (np.sqrt(inputdim) * self.grid_norm_factor ) )
-        
+    
         # self.k = nn.Parameter(torch.randn(1, 1, 1, 1) * self.omega)
 
         if( self.addbias ):
             self.bias  = torch.nn.Parameter( torch.zeros(1,outdim))
-        
-    #     self.init_weights()
-    
-    # def init_weights(self):
-    #     with torch.no_grad():
-    #         if self.is_first:
-    #             nn.init.uniform_(self.fouriercoeffs, -1 / (np.sqrt(self.inputdim) * self.grid_norm_factor ), 
-    #                                               1 / (np.sqrt(self.inputdim) * self.grid_norm_factor ))      
-    #         else:
-    #            nn.init.uniform_(self.fouriercoeffs, -np.sqrt(6 / self.inputdim) / self.omega, 
-    #                                          np.sqrt(6 / self.inputdim) / self.omega)
 
     #x.shape ( ... , indim ) 
     #out.shape ( ..., outdim)
@@ -111,11 +99,11 @@ class FourierKANLayer(torch.nn.Module):
         k = torch.reshape(torch.arange(1,self.gridsize+1,device=x.device),(1,1,1,self.gridsize))
         xrshp = torch.reshape(x,(x.shape[0],1,x.shape[1],1) ) 
         #This should be fused to avoid materializing memory
-        c = torch.cos(k * xrshp )
-        s = torch.sin(k * xrshp )
+        c = torch.cos( k * xrshp )
+        s = torch.sin( k * xrshp )
         #We compute the interpolation of the various functions defined by their fourier coefficient for each input coordinates and we sum them 
-        y =  torch.sum( c*self.fouriercoeffs[0:1],(-2,-1)) 
-        y += torch.sum( s*self.fouriercoeffs[1:2],(-2,-1))
+        y =  torch.sum( c *self.fouriercoeffs[0:1],(-2,-1)) 
+        y += torch.sum( s *self.fouriercoeffs[1:2],(-2,-1))
         if( self.addbias):
             y += self.bias
         #End fuse
@@ -134,73 +122,34 @@ class FourierKANLayer(torch.nn.Module):
         '''
         y = torch.reshape( y, outshape)
         return y
+    
 
-
-class KAN(nn.Module):
+class FourierKAN(nn.Module):
     def __init__(self,
                  in_features=1,
                  hidden_features=64,
                  hidden_layers=3,
-                 out_features=1):
+                 out_features=1,
+                 input_grid_size=512,
+                 hidden_grid_size=5,
+                 output_grid_size=3
+                 ):
         super().__init__()
 
         self.net = []
        
-        self.net.append(FourierKANLayer(in_features, hidden_features, is_first=True, omega=3000.))
-        # self.net.append(nn.Linear(hidden_features, hidden_features))
+        self.net.append(FourierKANLayer(in_features, hidden_features, gridsize=input_grid_size))
         
         for _ in range(hidden_layers):
-             self.net.append(FourierKANLayer(hidden_features, hidden_features, omega=30.))
-            #  self.net.append(nn.Linear(hidden_features, hidden_features))
-            #  self.net.append(nn.LayerNorm(hidden_features))
+             self.net.append(FourierKANLayer(hidden_features, hidden_features, gridsize=hidden_grid_size))
 
-        self.net.append(FourierKANLayer(hidden_features, out_features))
+        self.net.append(FourierKANLayer(hidden_features, out_features, gridsize=output_grid_size))
 
         self.net = nn.Sequential(*self.net)
 
     def forward(self, x):
         """
         t: (B, 1) #  (normalized)
-        """
-        # Enables us to compute gradients w.r.t. coordinates
-        coords_org = x.clone().detach().requires_grad_(True)
-        coords = coords_org
-        
-        output = None
-        if x.dim() == 3:
-            coords = coords.squeeze(0)
-            output = self.net(coords).unsqueeze(0)
-        else:
-            output = self.net(coords)
-        
-        return {'model_in': coords_org, 'model_out':  output}
-
-
-class HybridNet(nn.Module):
-    def __init__(self,
-                 in_features=1,
-                 hidden_features=64,
-                 hidden_layers=3,
-                 out_features=1):
-        super().__init__()
-
-        self.net = []
-        self.net.append(nn.Linear(in_features, hidden_features))
-        # self.net.append(nn.LayerNorm(hidden_features))
-        
-        for _ in range(hidden_layers):
-             self.net.append(FourierKANLayer(hidden_features, hidden_features))
-             self.net.append(nn.Linear(hidden_features, hidden_features))
-
-
-        # print("hidden_dim:", hidden_features)
-        self.net.append(nn.Linear(hidden_features, out_features))
-
-        self.net = nn.Sequential(*self.net)
-
-    def forward(self, x):
-        """
-        x: (B, 1)
         """
         # Enables us to compute gradients w.r.t. coordinates
         coords_org = x.clone().detach().requires_grad_(True)
