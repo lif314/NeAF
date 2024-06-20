@@ -1,14 +1,12 @@
 import torch
 from torch import nn
 import numpy as np
-import torchaudio
-import math
 
 class MLP(nn.Module):
     def __init__(self,
                  n_in,
                  n_out=3,
-                 n_layers=4,
+                 n_layers=5,
                  n_hidden_units=256,
                  act='relu',
                  act_trainable=False,
@@ -42,7 +40,7 @@ class MLP(nn.Module):
             if i < n_layers-1:
                 layers += [l, act_]
             else:
-                layers += [nn.Linear(n_hidden_units, n_out), nn.Sigmoid()]
+                layers += [nn.Linear(n_hidden_units, n_out)]
         
         self.net = nn.Sequential(*layers)
 
@@ -272,7 +270,7 @@ class Siren(nn.Module):
     def __init__(self,
                  in_features=1,
                  hidden_features=256,
-                 hidden_layers=3,
+                 hidden_layers=4,
                  out_features=1,
                  outermost_linear=True, 
                  first_omega_0=3000,

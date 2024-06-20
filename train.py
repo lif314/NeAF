@@ -6,7 +6,7 @@ from dataset import AudioDataset
 from torch.utils.data import DataLoader
 
 # models
-from models import PE, MLP, FourierKAN, Siren, HybridNet
+from models import PE, MLP, FourierKAN, Siren
 
 # metrics
 from metrics import mse, calc_snr, compute_log_distortion
@@ -61,6 +61,8 @@ class CoordMLPSystem(LightningModule):
 
         elif hparams.arch == 'siren':
             self.mlp = Siren(in_features=hparams.in_features,
+                             hidden_layers=hparams.hidden_layers,
+                             hidden_features=hparams.hidden_features,
                              first_omega_0=hparams.first_omega_0,
                              hidden_omega_0=hparams.hidden_omega_0,
                              out_features=hparams.out_features)
@@ -108,7 +110,7 @@ class CoordMLPSystem(LightningModule):
         self.opt = Adam(self.mlp.parameters(), lr=self.hparams.lr)
         scheduler = CosineAnnealingLR(self.opt, hparams.num_epochs, hparams.lr/1e2)
 
-        return [self.opt] , [scheduler]
+        return [self.opt], [scheduler]
 
     def training_step(self, batch, batch_idx):
         a_pred = self(batch['t'])['model_out']
@@ -150,9 +152,12 @@ class CoordMLPSystem(LightningModule):
         
         t = torch.cat([x['t'] for x in self.validation_step_outputs])
         
-        fig, axes = plt.subplots(1,2)
+        a_error = a_gt - a_pred
+
+        fig, axes = plt.subplots(1, 3, figsize=(15, 5))
         axes[0].plot(t.squeeze().detach().cpu().numpy(), a_gt.squeeze().detach().cpu().numpy())
         axes[1].plot(t.squeeze().detach().cpu().numpy(), a_pred.squeeze().detach().cpu().numpy())       
+        axes[2].plot(t.squeeze().detach().cpu().numpy(), a_error.squeeze().detach().cpu().numpy())       
     
         self.logger.experiment.add_figure('val/gt_pred',
                                           fig,
