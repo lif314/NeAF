@@ -2,3 +2,6 @@ logs/
 __pycache__/
 data/
 logs_backup/
+env_asr/
+submodules/
+logs_blues001/

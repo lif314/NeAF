@@ -16,10 +16,15 @@ from torch.optim import Adam
 from torch.optim.lr_scheduler import CosineAnnealingLR
 
 import matplotlib.pyplot as plt
+from matplotlib.ticker import FixedLocator
 
 from pytorch_lightning import LightningModule, Trainer, seed_everything
 from pytorch_lightning.callbacks import TQDMProgressBar, ModelSummary
 from pytorch_lightning.loggers import TensorBoardLogger
+
+import librosa
+import soundfile as sf
+import os
 
 seed_everything(42, workers=True)
 
@@ -38,7 +43,7 @@ class CoordMLPSystem(LightningModule):
             P = [torch.tensor(1)*2**i for i in range(10)] # (1, 2*10)
             self.pe = PE(P)
 
-        if hparams.arch in ['relu', 'gaussian', 'quadratic',
+        if hparams.arch in ['relu', 'tanh', 'sinc', 'softsign', 'gaussian', 'quadratic',
                             'multi-quadratic', 'laplacian',
                             'super-gaussian', 'expsin']:
             kwargs = {'a': hparams.a, 'b': hparams.b}
@@ -59,10 +64,12 @@ class CoordMLPSystem(LightningModule):
             self.mlp = MLP(n_in=self.pe.out_dim,
                            n_out=hparams.out_features)
 
-        elif hparams.arch == 'siren':
+        elif hparams.arch == 'siren': # 263K
             self.mlp = Siren(in_features=hparams.in_features,
-                             hidden_layers=hparams.hidden_layers,
-                             hidden_features=hparams.hidden_features,
+                            #  hidden_layers=hparams.hidden_layers,
+                             hidden_layers=4,
+                            #  hidden_features=hparams.hidden_features,
+                             hidden_features=256,
                              first_omega_0=hparams.first_omega_0,
                              hidden_omega_0=hparams.hidden_omega_0,
                              out_features=hparams.out_features)
@@ -89,20 +96,21 @@ class CoordMLPSystem(LightningModule):
         return self.mlp(x)
         
     def setup(self, stage=None):
-        self.dataset = AudioDataset(wav_path=hparams.wav_path)
+        self.dataset = AudioDataset(dataset_name=hparams.dataset_name, audio_path=hparams.audio_path)
         self.rate = self.dataset.rate
+        os.makedirs(os.path.join(self.logger.log_dir, "pred_wavs"), exist_ok=True)
 
     def train_dataloader(self):
         return DataLoader(self.dataset,
                           shuffle=True,
-                          num_workers=4,
+                          num_workers=0,
                           batch_size=self.hparams.batch_size,
                           pin_memory=True)
 
     def val_dataloader(self):
         return DataLoader(self.dataset,
                           shuffle=False,
-                          num_workers=4,
+                          num_workers=0,
                           batch_size=self.hparams.batch_size,
                           pin_memory=True)
 
@@ -155,6 +163,19 @@ class CoordMLPSystem(LightningModule):
         a_error = a_gt - a_pred
 
         fig, axes = plt.subplots(1, 3, figsize=(15, 5))
+        
+        axes[0].set_ylim(-1, 1)
+        axes[1].set_ylim(-1, 1)
+        axes[2].set_ylim(-0.1, 0.1)
+
+        axes[0].yaxis.set_major_locator(FixedLocator([-1.0, -0.5,0.0, 0.5, 1.0]))
+        axes[1].yaxis.set_major_locator(FixedLocator([-1.0, -0.5,0.0, 0.5, 1.0]))
+        axes[2].yaxis.set_major_locator(FixedLocator([-0.1 ,0.0, 0.1]))
+
+        axes[0].get_xaxis().set_visible(False)
+        axes[1].get_xaxis().set_visible(False)
+        axes[2].get_xaxis().set_visible(False)
+
         axes[0].plot(t.squeeze().detach().cpu().numpy(), a_gt.squeeze().detach().cpu().numpy())
         axes[1].plot(t.squeeze().detach().cpu().numpy(), a_pred.squeeze().detach().cpu().numpy())       
         axes[2].plot(t.squeeze().detach().cpu().numpy(), a_error.squeeze().detach().cpu().numpy())       
@@ -166,7 +187,12 @@ class CoordMLPSystem(LightningModule):
         self.log('val/loss', mean_loss, prog_bar=True)
         self.log('val/snr', mean_snr, prog_bar=True)
         self.log('val/lsd', mean_lsd, prog_bar=True)
-        
+
+        if (self.current_epoch+1) % 200 == 0:
+            audio_data = librosa.util.normalize(a_pred.squeeze().detach().cpu().numpy())
+            filename = os.path.join(self.logger.log_dir, "pred_wavs", f"pred_epoch_{self.current_epoch}.wav")
+            sf.write(filename, audio_data, self.rate)
+
         self.validation_step_outputs.clear()  # free memory
 
 if __name__ == '__main__':

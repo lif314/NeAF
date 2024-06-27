@@ -2,6 +2,8 @@ import torch
 from torch.utils.data import Dataset
 import numpy as np
 import scipy.io.wavfile as wavfile
+import soundfile as sf
+
 
 def get_mgrid(sidelen, dim=2):
     '''Generates a flattened grid of (x,y,...) coordinates in a range of -1 to 1.
@@ -13,9 +15,17 @@ def get_mgrid(sidelen, dim=2):
     return mgrid
 
 class AudioDataset(Dataset):
-    def __init__(self, wav_path: str = "data/audio/gt_bach.wav"):
-        rate, data = wavfile.read(wav_path)
+    def __init__(self,  dataset_name = "gtzan", audio_path: str = "data/audio/gt_bach.wav"):
+        # print("dataset: ", dataset_name)
+        print("dataset seq: ",audio_path)
         
+        # if dataset_name == 'gtzan':
+            # rate, data = wavfile.read(audio_path)
+        # elif dataset_name == 'libri':
+        data, rate = sf.read(audio_path, dtype='float32')
+        print("rate: ", rate)
+        print("samples: ", len(data))
+
         amplitude = data.astype(np.float32)
         scale = np.max(np.abs(amplitude))
         amplitude = (amplitude / scale)
@@ -30,3 +40,4 @@ class AudioDataset(Dataset):
 
     def __getitem__(self, idx: int):
         return {"t": self.timepoints[idx], "a": self.amplitude[idx]}
+    

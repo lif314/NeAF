@@ -3,12 +3,15 @@ import argparse
 def get_opts():
     parser = argparse.ArgumentParser()
 
-    parser.add_argument('--wav_path', type=str, default='data/siren/gt_bach.wav',
+    parser.add_argument('--dataset_name', type=str, default='gtzan', choices=['gtzan', 'libri'],
+                        help='dataset')
+    parser.add_argument('--audio_path', type=str, default='data/siren/gt_bach.wav',
                         help='path to the image to reconstruct')
     parser.add_argument('--use_pe', default=False, action='store_true',
                         help='use positional encoding or not')
     parser.add_argument('--arch', type=str, default='identity',
-                        choices=['fourier', 'relu', 'ff', 'siren',
+                        choices=['fourier', 'relu', 'ff', 'siren', 'tanh',
+                                 'softsign', 'sinc', 
                                  'gaussian', 'quadratic', 'multi-quadratic',
                                  'laplacian', 'super-gaussian', 'expsin'],
                         help='network structure')

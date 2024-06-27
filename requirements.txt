@@ -1,4 +1,8 @@
 torch
 torchvision
+torchaudio
 pytorch_lightning
-jupyter
+tensorboard
+scipy
+matplotlib
+librosa
