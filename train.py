@@ -99,6 +99,7 @@ class CoordMLPSystem(LightningModule):
         self.dataset = AudioDataset(dataset_name=hparams.dataset_name, audio_path=hparams.audio_path)
         self.rate = self.dataset.rate
         os.makedirs(os.path.join(self.logger.log_dir, "pred_wavs"), exist_ok=True)
+        os.makedirs(os.path.join(self.logger.log_dir, "figs"), exist_ok=True)
 
     def train_dataloader(self):
         return DataLoader(self.dataset,
@@ -192,6 +193,16 @@ class CoordMLPSystem(LightningModule):
             audio_data = librosa.util.normalize(a_pred.squeeze().detach().cpu().numpy())
             filename = os.path.join(self.logger.log_dir, "pred_wavs", f"pred_epoch_{self.current_epoch}.wav")
             sf.write(filename, audio_data, self.rate)
+
+            metrics_txt = []
+            metrics_txt.append(f"epoch: {self.current_epoch}\n")
+            metrics_txt.append(f"val/snr:  {mean_snr}\n")
+            metrics_txt.append(f"val/lsd:  {mean_lsd}\n\n")
+
+            with open(os.path.join(self.logger.log_dir, "metrics.txt"), "a") as file:
+                file.writelines(metrics_txt)
+
+            fig.savefig(os.path.join(self.logger.log_dir, "figs", f"{self.current_epoch}.png"))
 
         self.validation_step_outputs.clear()  # free memory
 
