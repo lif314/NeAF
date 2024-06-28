@@ -26,6 +26,8 @@ import librosa
 import soundfile as sf
 import os
 
+from encoding import Encoding
+
 seed_everything(42, workers=True)
 
 def get_learning_rate(optimizer):
@@ -40,8 +42,33 @@ class CoordMLPSystem(LightningModule):
         self.validation_step_outputs = []
 
         if hparams.use_pe:
-            P = [torch.tensor(1)*2**i for i in range(10)] # (1, 2*10)
-            self.pe = PE(P)
+            # Frequency Encoding
+            # pos_encode_configs = {'type':'frequency', 'use_nyquist': True, 'mapping_input': len(audio.data)}
+            pos_encode_configs = {'type':'frequency', 'use_nyquist': False, 'mapping_input': hparams.batch_size}
+
+            # Gaussian Encoding
+            # pos_encode_configs = {'type':'gaussian', 'scale_B': 10, 'mapping_input': 256}
+
+            # No Encoding
+            # pos_encode_configs = {'type': None}
+
+            # self.pe = Encoding(encoding='frequency') # frequency, gaussian
+            # P = [torch.tensor(1)*2**i for i in range(10)] # (1, 2*10)
+            # self.pe = PE(P)
+
+            # Positional Encoding
+            in_features = 1
+            self.pos_encode = pos_encode_configs['type']
+            if self.pos_encode in Encoding().encoding_dict.keys():
+                self.positional_encoding = Encoding(self.pos_encode).run(in_features=in_features, pos_encode_configs=pos_encode_configs)
+                in_features = self.positional_encoding.out_dim
+            elif self.pos_encode == None: 
+                self.pos_encode = False
+            else:
+                assert "Invalid pos_encode. Choose from: [frequency, gaussian]"
+
+            print("Infeatures: ", in_features)
+
 
         if hparams.arch in ['relu', 'tanh', 'sinc', 'softsign', 'gaussian', 'quadratic',
                             'multi-quadratic', 'laplacian',
@@ -49,10 +76,10 @@ class CoordMLPSystem(LightningModule):
             kwargs = {'a': hparams.a, 'b': hparams.b}
             act = hparams.arch
             if hparams.use_pe:
-                n_in = self.pe.out_dim
+                n_in = self.positional_encoding.out_dim
             else:
                 n_in = hparams.in_features
-            self.mlp = MLP(n_in=n_in,
+            self.net = MLP(n_in=n_in,
                            act=act,
                            n_out=hparams.out_features,
                            act_trainable=hparams.act_trainable,
@@ -61,11 +88,11 @@ class CoordMLPSystem(LightningModule):
         elif hparams.arch == 'ff':
             P = hparams.sc * torch.normal(torch.zeros(1, 256))  # (1, 256)
             self.pe = PE(P)
-            self.mlp = MLP(n_in=self.pe.out_dim,
+            self.net = MLP(n_in=self.pe.out_dim,
                            n_out=hparams.out_features)
 
         elif hparams.arch == 'siren': # 263K
-            self.mlp = Siren(in_features=hparams.in_features,
+            self.net = Siren(in_features=hparams.in_features,
                             #  hidden_layers=hparams.hidden_layers,
                              hidden_layers=4,
                             #  hidden_features=hparams.hidden_features,
@@ -76,24 +103,24 @@ class CoordMLPSystem(LightningModule):
         
         elif hparams.arch == 'fourier':
             if hparams.use_pe:
-                n_in = self.pe.out_dim
+                n_in =  self.positional_encoding.out_dim
             else:
                 n_in = hparams.in_features
-            self.mlp = FourierKAN( in_features=n_in,
-                        hidden_features=hparams.hidden_features,
-                        hidden_layers=hparams.hidden_layers,
-                        out_features=hparams.out_features,
-                        input_grid_size=hparams.input_grid_size,
-                        hidden_grid_size=hparams.hidden_grid_size,
-                        output_grid_size=hparams.output_grid_size
-                    )
+            self.net = FourierKAN(in_features=n_in,
+                                hidden_features=hparams.hidden_features,
+                                hidden_layers=hparams.hidden_layers,
+                                out_features=hparams.out_features,
+                                input_grid_size=hparams.input_grid_size,
+                                hidden_grid_size=hparams.hidden_grid_size,
+                                output_grid_size=hparams.output_grid_size
+                                )
 
-        print("Model: ", self.mlp)
+        # print("Model: ", self.net)
 
     def forward(self, x):
         if hparams.use_pe or hparams.arch=='ff':
-            x = self.pe(x)
-        return self.mlp(x)
+            x = self.positional_encoding(x)
+        return self.net(x)
         
     def setup(self, stage=None):
         self.dataset = AudioDataset(dataset_name=hparams.dataset_name, audio_path=hparams.audio_path)
@@ -104,19 +131,19 @@ class CoordMLPSystem(LightningModule):
     def train_dataloader(self):
         return DataLoader(self.dataset,
                           shuffle=True,
-                          num_workers=0,
+                          num_workers=4,
                           batch_size=self.hparams.batch_size,
                           pin_memory=True)
 
     def val_dataloader(self):
         return DataLoader(self.dataset,
                           shuffle=False,
-                          num_workers=0,
+                          num_workers=4,
                           batch_size=self.hparams.batch_size,
                           pin_memory=True)
 
     def configure_optimizers(self):
-        self.opt = Adam(self.mlp.parameters(), lr=self.hparams.lr)
+        self.opt = Adam(self.net.parameters(), lr=self.hparams.lr)
         scheduler = CosineAnnealingLR(self.opt, hparams.num_epochs, hparams.lr/1e2)
 
         return [self.opt], [scheduler]

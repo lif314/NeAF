@@ -68,7 +68,7 @@ class GaussianEncoding(nn.Module):
         x_proj = (2. * np.pi * coords) @ self.B_gauss.t()
         return torch.cat([torch.sin(x_proj), torch.cos(x_proj)], dim=-1)
 
-# from wire
+
 class PosEncoding(nn.Module):
     '''Module to add positional encoding as in NeRF [Mildenhall et al. 2020].'''
     def __init__(self, in_features, sidelength=None, fn_samples=None, use_nyquist=True):
