@@ -28,7 +28,7 @@ def get_opts():
                         help='input dim of Network')
     parser.add_argument('--out_features', type=int, default=1,
                         help='output dim of Network')
-    parser.add_argument('--hidden_layers', type=int, default=4,
+    parser.add_argument('--hidden_layers', type=int, default=3,
                         help='number of KAN layers')
     parser.add_argument('--hidden_features', type=int, default=64,
                         help='number of KAN hidden layer dim')
@@ -38,7 +38,7 @@ def get_opts():
                         help='number of KAN grid zise of hidden layers')
     parser.add_argument('--output_grid_size', type=int, default=3,
                         help='number of KAN grid zise of output layer')
-    parser.add_argument('--outermost_linear', type=bool, default=False,
+    parser.add_argument('--outermost_linear', default=False, action='store_true',
                         help='out with linear layer')
     
     parser.add_argument('--error_threld', type=float, default=0.5)

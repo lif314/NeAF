@@ -4,8 +4,13 @@ import numpy as np
 
 
 class FourierKANLayer(torch.nn.Module):
-    def __init__( self, inputdim, outdim, gridsize=8, addbias=True, smooth_initialization=False, 
-                 is_first=False, init_type="norm"):
+    def __init__( self,
+                 inputdim,
+                 outdim,
+                 gridsize=8,
+                 addbias=True,
+                 is_first=False,
+                 init_type="norm"):
         super(FourierKANLayer,self).__init__()
         self.gridsize= gridsize
         self.addbias = addbias
@@ -16,7 +21,7 @@ class FourierKANLayer(torch.nn.Module):
         # This makes KAN's scalar functions smooth at initialization.
         # Without smooth_initialization, high gridsizes will lead to high-frequency scalar functions,
         # with high derivatives and low correlation between similar inputs.
-        self.grid_norm_factor = (torch.arange(gridsize) + 1)**2 if smooth_initialization else np.sqrt(gridsize)
+        # self.grid_norm_factor = (torch.arange(gridsize) + 1)**2 if smooth_initialization else np.sqrt(gridsize)
         
         #The normalization has been chosen so that if given inputs where each coordinate is of unit variance,
         #then each coordinates of the output is of unit variance 
@@ -92,7 +97,7 @@ class FourierKAN(nn.Module):
                  hidden_features=64,
                  hidden_layers=3,
                  out_features=1,
-                 input_grid_size=512,
+                 input_grid_size=1024,
                  hidden_grid_size=5,
                  output_grid_size=3,
                  outermost_linear=False,
@@ -106,14 +111,13 @@ class FourierKAN(nn.Module):
         for _ in range(hidden_layers):
             self.net.append(FourierKANLayer(hidden_features, hidden_features, gridsize=hidden_grid_size, init_type=init_type))
 
-        self.net.append(FourierKANLayer(hidden_features, out_features, gridsize=output_grid_size, init_type=init_type))
+        # self.net.append(FourierKANLayer(hidden_features, out_features, gridsize=output_grid_size, init_type=init_type))
         
-        # if outermost_linear:
-        #     final_linear = nn.Linear(hidden_features, out_features)
-            
-        #     self.net.append(final_linear)
-        # else:
-        #     self.net.append(FourierKANLayer(hidden_features, out_features, gridsize=output_grid_size))
+        if outermost_linear:
+            final_linear = nn.Linear(hidden_features, out_features)
+            self.net.append(final_linear)
+        else:
+            self.net.append(FourierKANLayer(hidden_features, out_features, gridsize=output_grid_size, init_type=init_type))
         
 
         self.net = nn.Sequential(*self.net)
