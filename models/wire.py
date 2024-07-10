@@ -97,11 +97,11 @@ class Wire(nn.Module):
             self.nonlin = RealGaborLayer
         else:
             self.nonlin = ComplexGaborLayer
+            # Since complex numbers are two real numbers, reduce the number of hidden parameters by 2
+            # hidden_features = int(hidden_features/np.sqrt(2))
         
-        # Since complex numbers are two real numbers, reduce the number of hidden parameters by 2
-        hidden_features = int(hidden_features/np.sqrt(2))
-        dtype = torch.cfloat
-        self.complex = True
+        # dtype = torch.cfloat
+        # self.complex = True
         self.wavelet = 'gabor'    
         
         # Legacy parameter
@@ -123,7 +123,7 @@ class Wire(nn.Module):
 
         final_linear = nn.Linear(hidden_features,
                                  out_features,
-                                 dtype=dtype)            
+                                 dtype=torch.cfloat)            
         self.net.append(final_linear)
         
         self.net = nn.Sequential(*self.net)

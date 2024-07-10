@@ -5,7 +5,7 @@ import numpy as np
 
 class FourierKANLayer(torch.nn.Module):
     def __init__( self, inputdim, outdim, gridsize=8, addbias=True, smooth_initialization=False, 
-                 is_first=False, init_type="uniform"):
+                 is_first=False, init_type="norm"):
         super(FourierKANLayer,self).__init__()
         self.gridsize= gridsize
         self.addbias = addbias
@@ -96,7 +96,7 @@ class FourierKAN(nn.Module):
                  hidden_grid_size=5,
                  output_grid_size=3,
                  outermost_linear=False,
-                 init_type="uniform"):
+                 init_type="norm"):
         super().__init__()
 
         self.net = []

@@ -1,8 +1,71 @@
 import numpy as np
 import torch
 from torch import nn
+import torchaudio
 
-class IncodeSineLayer(nn.Module):
+class MLP(torch.nn.Sequential):
+    '''
+    Args:
+        in_channels (int): Number of input channels or features.
+        hidden_channels (list of int): List of hidden layer sizes. The last element is the output size.
+        mlp_bias (float): Value for initializing bias terms in linear layers.
+        activation_layer (torch.nn.Module, optional): Activation function applied between hidden layers. Default is SiLU.
+        bias (bool, optional): If True, the linear layers include bias terms. Default is True.
+        dropout (float, optional): Dropout probability applied after the last hidden layer. Default is 0.0 (no dropout).
+    '''
+    def __init__(self, MLP_configs, bias=True, dropout = 0.0):
+        super().__init__()
+
+        in_channels=MLP_configs['in_channels'] 
+        hidden_channels=MLP_configs['hidden_channels']
+        self.mlp_bias=MLP_configs['mlp_bias']
+        activation_layer=MLP_configs['activation_layer']
+
+        layers = []
+        in_dim = in_channels
+        for hidden_dim in hidden_channels[:-1]:
+            layers.append(torch.nn.Linear(in_dim, hidden_dim, bias=bias))
+            if MLP_configs['task'] == 'denoising':
+                layers.append(nn.LayerNorm(hidden_dim))
+            layers.append(activation_layer())
+            in_dim = hidden_dim
+
+        layers.append(torch.nn.Linear(in_dim, hidden_channels[-1], bias=bias))
+        layers.append(torch.nn.Dropout(dropout))
+        
+        self.layers = nn.Sequential(*layers)
+        self.layers.apply(self.init_weights)
+        
+    def init_weights(self, m):
+        if isinstance(m, nn.Linear):
+            nn.init.trunc_normal_(m.weight, std=0.001)
+            torch.nn.init.constant_(m.bias, self.mlp_bias)
+
+    def forward(self, x):
+        out = self.layers(x)
+        return out
+    
+
+class Custom1DFeatureExtractor(nn.Module):
+    def __init__(self, im_chans, out_chans):
+        super(Custom1DFeatureExtractor, self).__init__()
+        self.conv1 = nn.Conv1d(in_channels=im_chans, out_channels=out_chans[0], kernel_size=3, stride=1, padding=1)
+        self.pool1 = nn.MaxPool1d(kernel_size=2, stride=2)
+        self.conv2 = nn.Conv1d(in_channels=32, out_channels=out_chans[1], kernel_size=5, stride=1, padding=1, groups=32)
+        self.pool2 = nn.MaxPool1d(kernel_size=2, stride=2)
+        self.conv3 = nn.Conv1d(in_channels=64, out_channels=out_chans[2], kernel_size=7, stride=1, padding=1, groups=64)
+        self.global_avg_pool = nn.AdaptiveAvgPool1d(1) 
+
+    def forward(self, x):
+        x = self.pool1(nn.functional.relu(self.conv1(x)))
+        x = self.pool2(nn.functional.relu(self.conv2(x)))
+        x = nn.functional.relu(self.conv3(x))
+        x = self.global_avg_pool(x)
+        x = x.view(x.size(0), -1)
+        return x
+    
+
+class SineLayer(nn.Module):
     '''
     SineLayer is a custom PyTorch module that applies a modified Sinusoidal activation function to the output of a linear transformation
     with adjustable parameters.
@@ -47,22 +110,50 @@ class IncodeSineLayer(nn.Module):
     
 
 class INCODE(nn.Module):
-    def __init__(self, 
-                 in_features=1,
-                 hidden_features=4,
-                 hidden_layers=256,
-                 out_features=1,
+    def __init__(self,
+                 in_features,
+                 hidden_features,
+                 hidden_layers,
+                 out_features,
                  outermost_linear=True,
-                 first_omega_0=3000,
-                 hidden_omega_0=30):
+                 first_omega_0=30,
+                 hidden_omega_0=30,
+                 rate=1,
+                 gt=None):
         super().__init__()
 
+        ### Harmonizer Configurations
+        MLP_configs={'task': 'audio',
+                    'in_channels': 50,             
+                    'hidden_channels': [50, 32, 4],
+                    'mlp_bias':0.3120,
+                    'activation_layer': nn.SiLU,
+                    'sample_rate': rate,
+                    'GT': gt.squeeze(-1)
+                    }
+
+        self.ground_truth = MLP_configs['GT']
+        self.task = MLP_configs['task']
+        self.nonlin = SineLayer
+        self.hidden_layers = hidden_layers
+
+        # Harmonizer network
+        self.feature_extractor = torchaudio.transforms.MFCC(
+                                                sample_rate=MLP_configs['sample_rate'],
+                                                n_mfcc=MLP_configs['in_channels'],
+                                                melkwargs={'n_fft': 400, 'hop_length': 160,
+                                                            'n_mels': 50, 'center': False})
+
+        self.aux_mlp = MLP(MLP_configs)
+        self.gap = nn.AdaptiveAvgPool1d(1)
+        
+        # Composer Network
         self.net = []
-        self.net.append(IncodeSineLayer(in_features, hidden_features, 
+        self.net.append(self.nonlin(in_features, hidden_features, 
                                   is_first=True, omega_0=first_omega_0))
 
         for i in range(hidden_layers):
-            self.net.append(IncodeSineLayer(hidden_features, hidden_features, 
+            self.net.append(self.nonlin(hidden_features, hidden_features, 
                                       is_first=False, omega_0=hidden_omega_0))
 
         if outermost_linear:
@@ -77,10 +168,27 @@ class INCODE(nn.Module):
                     
             self.net.append(final_linear)
         else:
-            self.net.append(IncodeSineLayer(hidden_features, out_features, 
+            self.net.append(self.nonlin(hidden_features, out_features, 
                                       is_first=False, omega_0=hidden_omega_0))
         
         self.net = nn.Sequential(*self.net)
         
+    
     def forward(self, coords):
-        return self.net(coords)
+        # Must use GT! KAO
+        extracted_features = self.feature_extractor(self.ground_truth)
+
+        gap = self.gap(extracted_features.view(extracted_features.size(0), extracted_features.size(1), -1)) 
+        coef = self.aux_mlp(gap[..., 0])
+        
+        a_param, b_param, c_param, d_param = coef[0]
+                
+        output = self.net[0](coords, a_param, b_param, c_param, d_param)
+        
+        for i in range(1, self.hidden_layers + 1):
+            output = self.net[i](output, a_param, b_param, c_param, d_param)
+        
+        output = self.net[self.hidden_layers + 1](output)
+                
+        # return output
+        return [output, coef]
