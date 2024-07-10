@@ -52,10 +52,10 @@ class CoordMLPSystem(LightningModule):
             # No Encoding
             pos_encode_configs = {'type': None}
         elif hparams.pe_type == "NeRF":
-            # Frequency Encoding
+            # Frequency Encoding (NeRF)
             pos_encode_configs = {'type':'frequency', 'use_nyquist': True, 'mapping_input': hparams.batch_size}
         elif hparams.pe_type == "FFN":
-            # Gaussian Encoding
+            # Gaussian Encoding (FFN)
             pos_encode_configs = {'type':'gaussian', 'scale_B': 100, 'mapping_input': 32}
 
         self.pos_encode = pos_encode_configs['type']
