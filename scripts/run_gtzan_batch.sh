@@ -4,8 +4,7 @@
 # seq_id=00000
 
 
-# types=(blues classical country disco hiphop jazz metal pop reggae rock)
-types=(classical country disco hiphop jazz metal pop reggae rock)
+types=(blues classical country disco hiphop jazz metal pop reggae rock)
 seq_ids=(00000 00033 00099)
 
 

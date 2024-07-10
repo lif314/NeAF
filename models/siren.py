@@ -2,7 +2,6 @@ import torch
 from torch import nn
 import numpy as np
 
-
 class SineLayer(nn.Module):
     # See paper sec. 3.2, final paragraph, and supplement Sec. 1.5 for discussion of omega_0.
     
@@ -71,6 +70,4 @@ class Siren(nn.Module):
         self.net = nn.Sequential(*self.net)
     
     def forward(self, coords):
-        coords = coords.clone().detach().requires_grad_(True) # allows to take derivative w.r.t. input
-        output = self.net(coords)
-        return {'model_in': coords, 'model_out': output}   
+        return self.net(coords)

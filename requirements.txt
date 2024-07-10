@@ -6,3 +6,5 @@ tensorboard
 scipy
 matplotlib
 librosa
+pesq
+pystoi

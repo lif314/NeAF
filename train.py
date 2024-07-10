@@ -6,7 +6,13 @@ from dataset import AudioDataset
 from torch.utils.data import DataLoader
 
 # models
-from models import PE, MLP, FourierKAN, Siren
+from models.mlp import MLP
+from models.siren import Siren
+from models.incode import INCODE
+from models.wire import Wire
+from models.fourier_kan import FourierKAN
+from models.bspline_kan import BsplineKAN
+from models.hyper_kan import HyperKAN
 
 # metrics
 from metrics import mse, calc_snr, compute_log_distortion
@@ -41,68 +47,75 @@ class CoordMLPSystem(LightningModule):
 
         self.validation_step_outputs = []
 
-        if hparams.use_pe:
-            # Frequency Encoding
-            # pos_encode_configs = {'type':'frequency', 'use_nyquist': True, 'mapping_input': len(audio.data)}
-            pos_encode_configs = {'type':'frequency', 'use_nyquist': False, 'mapping_input': hparams.batch_size}
-
-            # Gaussian Encoding
-            # pos_encode_configs = {'type':'gaussian', 'scale_B': 10, 'mapping_input': 256}
-
+        # Positional Encoding
+        if hparams.pe_type == "None":
             # No Encoding
-            # pos_encode_configs = {'type': None}
+            pos_encode_configs = {'type': None}
+        elif hparams.pe_type == "NeRF":
+            # Frequency Encoding
+            pos_encode_configs = {'type':'frequency', 'use_nyquist': True, 'mapping_input': hparams.batch_size}
+        elif hparams.pe_type == "FFN":
+            # Gaussian Encoding
+            pos_encode_configs = {'type':'gaussian', 'scale_B': 100, 'mapping_input': 32}
 
-            # self.pe = Encoding(encoding='frequency') # frequency, gaussian
-            # P = [torch.tensor(1)*2**i for i in range(10)] # (1, 2*10)
-            # self.pe = PE(P)
+        self.pos_encode = pos_encode_configs['type']
+        if self.pos_encode in Encoding().encoding_dict.keys():
+            self.positional_encoding = Encoding(self.pos_encode).run(in_features=hparams.in_features, pos_encode_configs=pos_encode_configs)
+        elif self.pos_encode == None:
+            self.pos_encode = False
+        else:
+            assert "Invalid pos_encode. Choose from: [frequency, gaussian]"
 
-            # Positional Encoding
-            in_features = 1
-            self.pos_encode = pos_encode_configs['type']
-            if self.pos_encode in Encoding().encoding_dict.keys():
-                self.positional_encoding = Encoding(self.pos_encode).run(in_features=in_features, pos_encode_configs=pos_encode_configs)
-                in_features = self.positional_encoding.out_dim
-            elif self.pos_encode == None: 
-                self.pos_encode = False
-            else:
-                assert "Invalid pos_encode. Choose from: [frequency, gaussian]"
+        if  self.pos_encode:
+            print("PE Dim: ", self.positional_encoding.out_dim)
 
-            print("Infeatures: ", in_features)
-
-
-        if hparams.arch in ['relu', 'tanh', 'sinc', 'softsign', 'gaussian', 'quadratic',
-                            'multi-quadratic', 'laplacian',
-                            'super-gaussian', 'expsin']:
+        if hparams.arch in ['relu', 'prelu', 'selu', 'tanh',
+                            'sigmoid', 'silu', 'softplus', 'elu',
+                            'sinc', 'gaussian', 'quadratic', 
+                            'multi-quadratic', 'laplacian', 'super-gaussian', 'expsin']:
             kwargs = {'a': hparams.a, 'b': hparams.b}
             act = hparams.arch
-            if hparams.use_pe:
+            if self.pos_encode:
                 n_in = self.positional_encoding.out_dim
             else:
                 n_in = hparams.in_features
-            self.net = MLP(n_in=n_in,
+            self.net = MLP(in_features=n_in,
+                           hidden_layers=4,
+                           hidden_features=256,
                            act=act,
-                           n_out=hparams.out_features,
+                           out_features=hparams.out_features,
                            act_trainable=hparams.act_trainable,
                            **kwargs)
 
-        elif hparams.arch == 'ff':
-            P = hparams.sc * torch.normal(torch.zeros(1, 256))  # (1, 256)
-            self.pe = PE(P)
-            self.net = MLP(n_in=self.pe.out_dim,
-                           n_out=hparams.out_features)
-
-        elif hparams.arch == 'siren': # 263K
+        elif hparams.arch == 'siren':
             self.net = Siren(in_features=hparams.in_features,
-                            #  hidden_layers=hparams.hidden_layers,
                              hidden_layers=4,
-                            #  hidden_features=hparams.hidden_features,
                              hidden_features=256,
                              first_omega_0=hparams.first_omega_0,
                              hidden_omega_0=hparams.hidden_omega_0,
                              out_features=hparams.out_features)
-        
+
+        elif hparams.arch == 'incode':
+            self.net = INCODE(in_features=hparams.in_features,
+                             hidden_layers=4,
+                             hidden_features=256,
+                             first_omega_0=hparams.first_omega_0,
+                             hidden_omega_0=hparams.hidden_omega_0,
+                             out_features=hparams.out_features,
+                             outermost_linear=True)
+            
+        elif hparams.arch == 'wire':
+            self.net = Wire(in_features=hparams.in_features,
+                             hidden_layers=4,
+                             hidden_features=256,
+                             wire_type='complex',
+                             first_omega_0=hparams.first_omega_0,
+                             hidden_omega_0=hparams.hidden_omega_0,
+                             out_features=hparams.out_features,
+                             sigma=10.0)
+
         elif hparams.arch == 'fourier':
-            if hparams.use_pe:
+            if self.pos_encode:
                 n_in =  self.positional_encoding.out_dim
             else:
                 n_in = hparams.in_features
@@ -112,13 +125,44 @@ class CoordMLPSystem(LightningModule):
                                 out_features=hparams.out_features,
                                 input_grid_size=hparams.input_grid_size,
                                 hidden_grid_size=hparams.hidden_grid_size,
-                                output_grid_size=hparams.output_grid_size
+                                output_grid_size=hparams.output_grid_size,
+                                outermost_linear=hparams.outermost_linear,
+                                init_type=hparams.init_type,
+                                )
+            
+        elif hparams.arch == 'bspline':
+            if self.pos_encode:
+                n_in =  self.positional_encoding.out_dim
+            else:
+                n_in = hparams.in_features
+            self.net = BsplineKAN(in_features=n_in,
+                                hidden_features=hparams.hidden_features,
+                                hidden_layers=hparams.hidden_layers,
+                                out_features=hparams.out_features,
+                                input_grid_size=hparams.input_grid_size,
+                                hidden_grid_size=hparams.hidden_grid_size,
+                                output_grid_size=hparams.output_grid_size,
+                                )
+            
+        elif hparams.arch == 'hyper':
+            if self.pos_encode:
+                n_in =  self.positional_encoding.out_dim
+            else:
+                n_in = hparams.in_features
+            self.net = HyperKAN(in_features=n_in,
+                                hidden_features=hparams.hidden_features,
+                                hidden_layers=hparams.hidden_layers,
+                                out_features=hparams.out_features,
+                                input_grid_size=hparams.input_grid_size,
+                                hidden_grid_size=hparams.hidden_grid_size,
+                                output_grid_size=hparams.output_grid_size,
+                                outermost_linear=hparams.outermost_linear
                                 )
 
         # print("Model: ", self.net)
 
     def forward(self, x):
-        if hparams.use_pe or hparams.arch=='ff':
+        if self.pos_encode:
             x = self.positional_encoding(x)
         return self.net(x)
         
@@ -149,7 +193,7 @@ class CoordMLPSystem(LightningModule):
         return [self.opt], [scheduler]
 
     def training_step(self, batch, batch_idx):
-        a_pred = self(batch['t'])['model_out']
+        a_pred = self(batch['t'])
 
         loss = mse(a_pred, batch['a'])
 
@@ -162,7 +206,7 @@ class CoordMLPSystem(LightningModule):
         return loss
 
     def validation_step(self, batch, batch_idx):
-        a_pred = self(batch['t'])['model_out']
+        a_pred = self(batch['t'])
 
         loss = mse(a_pred, batch['a'], reduction='none')
 
@@ -179,10 +223,9 @@ class CoordMLPSystem(LightningModule):
 
     def on_validation_epoch_end(self):
         mean_loss = torch.cat([x['val_loss'] for x in self.validation_step_outputs]).mean()
-        # mean_psnr = -10*torch.log10(mean_loss)
         a_gt = torch.cat([x['a_gt'] for x in self.validation_step_outputs])
         a_pred = torch.cat([x['a_pred'] for x in self.validation_step_outputs])
-        
+
         mean_snr = calc_snr(a_pred.detach().clone(), a_gt)
         mean_lsd = compute_log_distortion(a_pred.detach().clone().cpu(), a_gt.cpu())
         
@@ -194,11 +237,12 @@ class CoordMLPSystem(LightningModule):
         
         axes[0].set_ylim(-1, 1)
         axes[1].set_ylim(-1, 1)
-        axes[2].set_ylim(-0.1, 0.1)
+        error_threld = hparams.error_threld
+        axes[2].set_ylim(-error_threld, error_threld)
 
         axes[0].yaxis.set_major_locator(FixedLocator([-1.0, -0.5,0.0, 0.5, 1.0]))
         axes[1].yaxis.set_major_locator(FixedLocator([-1.0, -0.5,0.0, 0.5, 1.0]))
-        axes[2].yaxis.set_major_locator(FixedLocator([-0.1 ,0.0, 0.1]))
+        axes[2].yaxis.set_major_locator(FixedLocator([-error_threld ,0.0, error_threld]))
 
         axes[0].get_xaxis().set_visible(False)
         axes[1].get_xaxis().set_visible(False)
@@ -253,7 +297,7 @@ if __name__ == '__main__':
                       devices=1,
                       num_sanity_val_steps=0,
                       log_every_n_steps=1,
-                      check_val_every_n_epoch=20,
+                      check_val_every_n_epoch=hparams.check_val_every_n_epoch,
                       benchmark=True)
 
     trainer.fit(system)

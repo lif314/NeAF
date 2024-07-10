@@ -2,69 +2,163 @@ import torch
 from torch import nn
 import numpy as np
 import math
+from collections import OrderedDict
+import re
+
+class MetaModule(nn.Module):
+    """
+    Base class for PyTorch meta-learning modules. These modules accept an
+    additional argument `params` in their `forward` method.
+
+    Notes
+    -----
+    Objects inherited from `MetaModule` are fully compatible with PyTorch
+    modules from `torch.nn.Module`. The argument `params` is a dictionary of
+    tensors, with full support of the computation graph (for differentiation).
+    """
+    def meta_named_parameters(self, prefix='', recurse=True):
+        gen = self._named_members(
+            lambda module: module._parameters.items()
+            if isinstance(module, MetaModule) else [],
+            prefix=prefix, recurse=recurse)
+        for elem in gen:
+            yield elem
+
+    def meta_parameters(self, recurse=True):
+        for name, param in self.meta_named_parameters(recurse=recurse):
+            yield param
+
+
+def get_subdict(dictionary, key=None):
+    if dictionary is None:
+        return None
+    if (key is None) or (key == ''):
+        return dictionary
+    key_re = re.compile(r'^{0}\.(.+)'.format(re.escape(key)))
+    return OrderedDict((key_re.sub(r'\1', k), value) for (k, value)
+        in dictionary.items() if key_re.match(k) is not None)
+
+
+class MetaSequential(nn.Sequential, MetaModule):
+    __doc__ = nn.Sequential.__doc__
+
+    def forward(self, input, params=None):
+        for name, module in self._modules.items():
+            if isinstance(module, MetaModule):
+                input = module(input, params=get_subdict(params, name))
+            elif isinstance(module, nn.Module):
+                input = module(input)
+            else:
+                raise TypeError('The module must be either a torch module '
+                    '(inheriting from `nn.Module`), or a `MetaModule`. '
+                    'Got type: `{0}`'.format(type(module)))
+        return input
+
+class BatchLinear(nn.Linear, MetaModule):
+    '''A linear meta-layer that can deal with batched weight matrices and biases, as for instance output by a
+    hypernetwork.'''
+    __doc__ = nn.Linear.__doc__
+
+    def forward(self, input, params=None):
+        if params is None:
+            params = OrderedDict(self.named_parameters())
+
+        bias = params.get('bias', None)
+        weight = params['weight']
+
+        output = input.matmul(weight.permute(*[i for i in range(len(weight.shape) - 2)], -1, -2))
+        output += bias.unsqueeze(-2)
+        return output
+    
+def init_weights_normal(m):
+    if type(m) == BatchLinear or type(m) == nn.Linear:
+        if hasattr(m, 'weight'):
+            nn.init.kaiming_normal_(m.weight, a=0.0, nonlinearity='relu', mode='fan_in')
+
+
+def init_weights_selu(m):
+    if type(m) == BatchLinear or type(m) == nn.Linear:
+        if hasattr(m, 'weight'):
+            num_input = m.weight.size(-1)
+            nn.init.normal_(m.weight, std=1 / math.sqrt(num_input))
+
+
+def init_weights_elu(m):
+    if type(m) == BatchLinear or type(m) == nn.Linear:
+        if hasattr(m, 'weight'):
+            num_input = m.weight.size(-1)
+            nn.init.normal_(m.weight, std=math.sqrt(1.5505188080679277) / math.sqrt(num_input))
+
+
+def init_weights_xavier(m):
+    if type(m) == BatchLinear or type(m) == nn.Linear:
+        if hasattr(m, 'weight'):
+            nn.init.xavier_normal_(m.weight)
 
 class MLP(nn.Module):
     def __init__(self,
-                 n_in,
-                 n_out=1,
-                 n_layers=6,
-                 n_hidden_units=256,
+                 in_features=1,
+                 out_features=1,
+                 hidden_layers=4,
+                 hidden_features=256,
                  act='relu',
                  act_trainable=False,
+                 outermost_linear=True,
                  **kwargs):
         super().__init__()
 
-        layers = []
-        for i in range(n_layers):
-
-            if i == 0:
-                l = nn.Linear(n_in, n_hidden_units, bias=True)
-            elif 0 < i < n_layers-1:
-                l = nn.Linear(n_hidden_units, n_hidden_units, bias=True)
-
-            if act == 'relu':
-                act_ = nn.ReLU(inplace=True)
-            if act == 'tanh':
-                act_ = nn.Tanh()
-            if act == 'softsign':
-                act_ = nn.Softsign()
-            if act == 'sinc':
-                act_ = SincActivation(a=kwargs['a'], trainable=act_trainable)
-            elif act == 'gaussian':
-                act_ = GaussianActivation(a=kwargs['a'], trainable=act_trainable)
-            elif act == 'quadratic':
-                act_ = QuadraticActivation(a=kwargs['a'], trainable=act_trainable)
-            elif act == 'multi-quadratic':
-                act_ = MultiQuadraticActivation(a=kwargs['a'], trainable=act_trainable)
-            elif act == 'laplacian':
-                act_ = LaplacianActivation(a=kwargs['a'], trainable=act_trainable)
-            elif act == 'super-gaussian':
-                act_ = SuperGaussianActivation(a=kwargs['a'], b=kwargs['b'],
-                                               trainable=act_trainable)
-            elif act == 'expsin':
-                act_ = ExpSinActivation(a=kwargs['a'], trainable=act_trainable)
-
-            if i < n_layers-1:
-                layers += [l, act_]
-            else:
-                # layers += [nn.Linear(n_hidden_units, n_out), act_]
-                layers += [nn.Linear(n_hidden_units, n_out, bias=True)]
+        nls_and_inits = {'relu':(nn.ReLU(inplace=True), init_weights_normal, None),
+                         'prelu':(nn.PReLU(), init_weights_normal, None),
+                         'selu':(nn.SELU(inplace=True), init_weights_selu, None),
+                         'tanh':(nn.Tanh(), init_weights_xavier, None),
+                         'sigmoid':(nn.Sigmoid(), init_weights_xavier, None),
+                         'silu':(nn.SiLU(inplace=True), init_weights_normal, None),
+                         'softplus':(nn.Softplus(), init_weights_normal, None),
+                         'elu':(nn.ELU(inplace=True), init_weights_elu, None),
+                         'sinc':(SincActivation(a=kwargs['a'], trainable=act_trainable), init_weights_normal, None),
+                         'gaussian':(GaussianActivation(a=kwargs['a'], trainable=act_trainable), init_weights_normal, None),
+                         'quadratic':(QuadraticActivation(a=kwargs['a'], trainable=act_trainable), init_weights_normal, None),
+                         'multi-quadratic':(MultiQuadraticActivation(a=kwargs['a'], trainable=act_trainable), init_weights_normal, None),
+                         'laplacian':(LaplacianActivation(a=kwargs['a'], trainable=act_trainable), init_weights_normal, None),
+                         'super-gaussian':(SuperGaussianActivation(a=kwargs['a'], b=kwargs['b'], trainable=act_trainable), init_weights_normal, None),
+                         'expsin':(ExpSinActivation(a=kwargs['a'], trainable=act_trainable), init_weights_normal, None),
+                         }
         
-        self.net = nn.Sequential(*layers)
+        nl, nl_weight_init, first_layer_init = nls_and_inits[act]
+
+        self.weight_init = nl_weight_init
+
+        self.net = []
+        self.net.append(MetaSequential(
+            BatchLinear(in_features, hidden_features), nl
+        ))
+
+        for i in range(hidden_layers):
+            self.net.append(MetaSequential(
+                BatchLinear(hidden_features, hidden_features), nl
+            ))
+
+        if outermost_linear:
+            self.net.append(MetaSequential(BatchLinear(hidden_features, out_features)))
+        else:
+            self.net.append(MetaSequential(
+                BatchLinear(hidden_features, out_features), nl
+            ))
+
+        self.net = MetaSequential(*self.net)
+        if self.weight_init is not None:
+            self.net.apply(self.weight_init)
+
+        if first_layer_init is not None: # Apply special initialization to first layer, if applicable.
+            self.net[0].apply(first_layer_init)
 
     def forward(self, x):
-        """
-        x: (B, 2) # pixel uv (normalized)
-        """
-        # Enables us to compute gradients w.r.t. coordinates
-        coords_org = x.clone().detach().requires_grad_(True)
-        coords = coords_org
-
-        return {'model_in': coords_org, 'model_out': self.net(coords)}  # (B, 3) rgb
-
+        return self.net(x)
+    
 
 class FourierKANLayer(torch.nn.Module):
-    def __init__( self, inputdim, outdim, gridsize=8, addbias=True, smooth_initialization=False):
+    def __init__( self, inputdim, outdim, gridsize=8, addbias=True, smooth_initialization=False, 
+                 is_first=False, init_type="uniform"):
         super(FourierKANLayer,self).__init__()
         self.gridsize= gridsize
         self.addbias = addbias
@@ -81,10 +175,32 @@ class FourierKANLayer(torch.nn.Module):
         #then each coordinates of the output is of unit variance 
         #independently of the various sizes
        
-        self.fouriercoeffs = torch.nn.Parameter( torch.randn(2, outdim, inputdim, gridsize) / 
-                                                (np.sqrt(inputdim) * self.grid_norm_factor ) )
-    
-        # self.k = nn.Parameter(torch.randn(1, 1, 1, 1) * self.omega)
+        print("Init type===========: ", init_type)
+        # Norm
+        if init_type == "norm":
+            # if is_first:
+            std_dev = np.sqrt(1.0 / (self.inputdim * self.gridsize))
+            # else:
+            # sigma = self.inputdim * self.gridsize + self.outdim * np.sum(np.arange(1, self.gridsize + 1)**2)
+            # std_dev = np.sqrt(2.0 / sigma)
+            # sigma = self.outdim * np.sum(np.arange(1, self.gridsize + 1)**2)
+            # std_dev = np.sqrt(1.0 / sigma)
+            self.fouriercoeffs = torch.nn.Parameter(torch.randn(2, outdim, inputdim, gridsize) * std_dev)
+        
+        # Uniform
+        elif init_type == "uniform":
+            # if is_first:
+                # uniform_range = np.sqrt(3.0 / (self.inputdim * self.gridsize))
+            # else:
+            # sigma = self.inputdim * self.gridsize + self.outdim * np.sum(np.arange(1, self.gridsize + 1)**2)
+            # uniform_range = np.sqrt(6.0 / sigma)
+            sigma = self.outdim * np.sum(np.arange(1, self.gridsize + 1)**2)
+            uniform_range = np.sqrt(3.0 / sigma)
+            self.fouriercoeffs = torch.nn.Parameter(torch.FloatTensor(2, outdim, inputdim, gridsize).uniform_(-uniform_range, uniform_range))
+
+        # Random
+        elif init_type == "rand":
+            self.fouriercoeffs = torch.nn.Parameter(torch.rand(2, outdim, inputdim, gridsize))
 
         if( self.addbias ):
             self.bias  = torch.nn.Parameter( torch.zeros(1,outdim))
@@ -102,8 +218,8 @@ class FourierKANLayer(torch.nn.Module):
         c = torch.cos( k * xrshp )
         s = torch.sin( k * xrshp )
         #We compute the interpolation of the various functions defined by their fourier coefficient for each input coordinates and we sum them 
-        y =  torch.sum( c *self.fouriercoeffs[0:1],(-2,-1)) 
-        y += torch.sum( s *self.fouriercoeffs[1:2],(-2,-1))
+        y =  torch.sum( c * self.fouriercoeffs[0:1],(-2,-1)) 
+        y += torch.sum( s * self.fouriercoeffs[1:2],(-2,-1))
         if( self.addbias):
             y += self.bias
         #End fuse
@@ -122,7 +238,6 @@ class FourierKANLayer(torch.nn.Module):
         '''
         y = torch.reshape( y, outshape)
         return y
-    
 
 class BsplineKANLayer(torch.nn.Module):
     def __init__(
@@ -360,18 +475,27 @@ class FourierKAN(nn.Module):
                  out_features=1,
                  input_grid_size=512,
                  hidden_grid_size=5,
-                 output_grid_size=3
-                 ):
+                 output_grid_size=3,
+                 outermost_linear=False,
+                 init_type="uniform"):
         super().__init__()
 
         self.net = []
        
-        self.net.append(FourierKANLayer(in_features, hidden_features, gridsize=input_grid_size))
+        self.net.append(FourierKANLayer(in_features, hidden_features, gridsize=input_grid_size, is_first=True, init_type=init_type))
         
         for _ in range(hidden_layers):
-            self.net.append(FourierKANLayer(hidden_features, hidden_features, gridsize=hidden_grid_size))
+            self.net.append(FourierKANLayer(hidden_features, hidden_features, gridsize=hidden_grid_size, init_type=init_type))
 
-        self.net.append(FourierKANLayer(hidden_features, out_features, gridsize=output_grid_size))
+        self.net.append(FourierKANLayer(hidden_features, out_features, gridsize=output_grid_size, init_type=init_type))
+        
+        # if outermost_linear:
+        #     final_linear = nn.Linear(hidden_features, out_features)
+            
+        #     self.net.append(final_linear)
+        # else:
+        #     self.net.append(FourierKANLayer(hidden_features, out_features, gridsize=output_grid_size))
+        
 
         self.net = nn.Sequential(*self.net)
 
@@ -379,88 +503,111 @@ class FourierKAN(nn.Module):
         """
         t: (B, 1) #  (normalized)
         """
-        # Enables us to compute gradients w.r.t. coordinates
-        coords_org = x.clone().detach().requires_grad_(True)
-        coords = coords_org
-        
-        output = None
-        if x.dim() == 3:
-            coords = coords.squeeze(0)
-            output = self.net(coords).unsqueeze(0)
-        else:
-            output = self.net(coords)
-        
-        return {'model_in': coords_org, 'model_out':  output}
+        return self.net(x)
 
-class PE(nn.Module):
-    """
-    perform positional encoding
-    """
-    def __init__(self, P):
-        """
-        P: (2, F) encoding matrix
-        """
+
+
+
+class HyperKANLayer(torch.nn.Module):
+    def __init__( self, inputdim, outdim, gridsize=8, addbias=True, smooth_initialization=False):
+        super(HyperKANLayer,self).__init__()
+        self.gridsize= gridsize
+        self.addbias = addbias
+        self.inputdim = inputdim
+        self.outdim = outdim
+        
+        self.grid_norm_factor = (torch.arange(gridsize) + 1)**2 if smooth_initialization else np.sqrt(gridsize)
+        
+        # self.fouriercoeffs = torch.nn.Parameter( torch.randn(1, outdim, inputdim, gridsize) / 
+        #                                         (np.sqrt(inputdim) * self.grid_norm_factor ) )
+        
+        print("Init AB---------------")
+        self.fouriercoeffs = torch.nn.Parameter(torch.empty(2, outdim, inputdim, gridsize))
+        a = np.sqrt(3 / (self.inputdim * self.gridsize ))
+        torch.nn.init.uniform_(self.fouriercoeffs, -a, a)
+
+        # #  self.linear.weight.uniform_(-np.sqrt(6 / self.in_features) / self.omega_0, 
+        #                                     #  np.sqrt(6 / self.in_features) / self.omega_0)
+
+    
+
+        if( self.addbias ):
+            self.bias  = torch.nn.Parameter( torch.zeros(1,outdim))
+
+    #x.shape ( ... , indim ) 
+    #out.shape ( ..., outdim)
+    def forward(self,x):
+        xshp = x.shape
+        outshape = xshp[0:-1]+(self.outdim,)
+        x = torch.reshape(x,(-1,self.inputdim))
+        #Starting at 1 because constant terms are in the bias
+        k = torch.reshape(torch.arange(1,self.gridsize+1,device=x.device),(1,1,1,self.gridsize))
+        # k = 30
+        xrshp = torch.reshape(x,(x.shape[0],1,x.shape[1],1) ) 
+        #This should be fused to avoid materializing memory
+        c = torch.cos( k * xrshp )
+        s = torch.sin( k * xrshp )
+        #We compute the interpolation of the various functions defined by their fourier coefficient for each input coordinates and we sum them 
+        y =  torch.sum( c * self.fouriercoeffs[0:1],(-2,-1)) 
+        # y += torch.sum( s *self.fouriercoeffs[1:2],(-2,-1))
+        if( self.addbias):
+            y += self.bias
+        #End fuse
+        '''
+        #You can use einsum instead to reduce memory usage
+        #It stills not as good as fully fused but it should help
+        #einsum is usually slower though
+        c = th.reshape(c,(1,x.shape[0],x.shape[1],self.gridsize))
+        s = th.reshape(s,(1,x.shape[0],x.shape[1],self.gridsize))
+        y2 = th.einsum( "dbik,djik->bj", th.concat([c,s],axis=0) ,self.fouriercoeffs )
+        if( self.addbias):
+            y2 += self.bias
+        diff = th.sum((y2-y)**2)
+        print("diff")
+        print(diff) #should be ~0
+        '''
+        y = torch.reshape(y, outshape)
+        return y
+    
+
+class HyperKAN(nn.Module):
+    def __init__(self,
+                 in_features=1,
+                 hidden_features=64,
+                 hidden_layers=3,
+                 out_features=1,
+                 input_grid_size=512,
+                 hidden_grid_size=5,
+                 output_grid_size=3,
+                 outermost_linear=False):
         super().__init__()
-        self.register_buffer("P", P)
 
-    @property
-    def out_dim(self):
-        return self.P.shape[1]*2
+        self.net = []
+
+        self.net.append(HyperKANLayer(in_features, hidden_features, gridsize=input_grid_size))
+        
+        for _ in range(hidden_layers):
+            self.net.append(HyperKANLayer(hidden_features, hidden_features, gridsize=hidden_grid_size))
+
+        # self.net.append(FourierKANLayer(hidden_features, out_features, gridsize=output_grid_size))
+            
+        # self.net.append(FourierKANLayer(hidden_features, hidden_features, gridsize=output_grid_size))
+        
+        # if outermost_linear:
+        #     final_linear = nn.Linear(hidden_features, out_features)
+        #     self.net.append(final_linear)
+        #     print("Output Linear---------------")
+        # else:
+        self.net.append(HyperKANLayer(hidden_features, out_features, gridsize=output_grid_size))
+
+        self.net = nn.Sequential(*self.net)
 
     def forward(self, x):
         """
-        x: (B, 2)
+        t: (B, 1) #  (normalized)
         """
-        x_ = 2*np.pi*x @ self.P # (B, F)
-        return torch.cat([torch.sin(x_), torch.cos(x_)], 1) # (B, 2*F)
-    
 
-class PosEncodingNeRF(nn.Module):
-    '''Module to add positional encoding as in NeRF [Mildenhall et al. 2020].'''
-
-    def __init__(self, in_features, sidelength=None, fn_samples=None, use_nyquist=True, num_frequencies=None, scale=2):
-        super().__init__()
-
-        self.in_features = in_features
-        self.scale = scale
-        self.sidelength = sidelength
-        if num_frequencies == None:
-            if self.in_features == 3:
-                self.num_frequencies = 10
-            elif self.in_features == 2:
-                assert sidelength is not None
-                if isinstance(sidelength, int):
-                    sidelength = (sidelength, sidelength)
-                self.num_frequencies = 4
-                if use_nyquist:
-                    self.num_frequencies = self.get_num_frequencies_nyquist(min(sidelength[0], sidelength[1]))
-            elif self.in_features == 1:
-                assert fn_samples is not None
-                self.num_frequencies = 4
-                if use_nyquist:
-                    self.num_frequencies = self.get_num_frequencies_nyquist(fn_samples)
-        else:
-            self.num_frequencies = num_frequencies
-        # self.frequencies_per_axis = (num_frequencies * np.array(sidelength)) // max(sidelength)
-        self.out_dim = in_features + in_features * 2 * self.num_frequencies  # (sum(self.frequencies_per_axis))
-
-    def get_num_frequencies_nyquist(self, samples):
-        nyquist_rate = 1 / (2 * (2 * 1 / samples))
-        return int(np.floor(np.log2(nyquist_rate)))
-
-    def forward(self, coords):
-        coords_pos_enc = coords
-        for i in range(self.num_frequencies):
-
-            for j in range(self.in_features):
-                c = coords[..., j]
-
-                sin = torch.unsqueeze(torch.sin((self.scale ** i) * np.pi * c), -1)
-                cos = torch.unsqueeze(torch.cos((self.scale ** i) * np.pi * c), -1)
-
-                coords_pos_enc = torch.cat((coords_pos_enc, sin, cos), axis=-1)
-
-        return coords_pos_enc
+        return self.net(x)
 
 class SineLayer(nn.Module):
     # See paper sec. 3.2, final paragraph, and supplement Sec. 1.5 for discussion of omega_0.

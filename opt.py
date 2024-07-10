@@ -7,20 +7,28 @@ def get_opts():
                         help='dataset')
     parser.add_argument('--audio_path', type=str, default='data/siren/gt_bach.wav',
                         help='path to the image to reconstruct')
-    parser.add_argument('--use_pe', default=False, action='store_true',
+    # parser.add_argument('--use_pe', default=False, action='store_true',
+    #                     help='use positional encoding or not')
+    parser.add_argument('--pe_type', type=str, default='None',
+                         choices=['None', 'NeRF', 'FFN'],
                         help='use positional encoding or not')
+    
     parser.add_argument('--arch', type=str, default='identity',
-                        choices=['fourier', 'relu', 'ff', 'siren', 'tanh',
-                                 'softsign', 'sinc', 
-                                 'gaussian', 'quadratic', 'multi-quadratic',
-                                 'laplacian', 'super-gaussian', 'expsin'],
+                        choices=['fourier', 'hyper', 'bspline', 'siren', 'wire', 'incode',
+                                 'relu', 'prelu', 'selu', 'tanh',
+                                 'sigmoid', 'silu', 'softplus', 'elu',
+                                 'sinc', 'gaussian', 'quadratic',
+                                 'multi-quadratic', 'laplacian', 'super-gaussian', 'expsin'],
                         help='network structure')
     
+    parser.add_argument('--init_type', type=str, default='norm',
+                        choices=['uniform', 'norm', 'rand'],
+                        help='network structure')
     parser.add_argument('--in_features', type=int, default=1,
                         help='input dim of Network')
     parser.add_argument('--out_features', type=int, default=1,
                         help='output dim of Network')
-    parser.add_argument('--hidden_layers', type=int, default=3,
+    parser.add_argument('--hidden_layers', type=int, default=4,
                         help='number of KAN layers')
     parser.add_argument('--hidden_features', type=int, default=64,
                         help='number of KAN hidden layer dim')
@@ -30,7 +38,10 @@ def get_opts():
                         help='number of KAN grid zise of hidden layers')
     parser.add_argument('--output_grid_size', type=int, default=3,
                         help='number of KAN grid zise of output layer')
+    parser.add_argument('--outermost_linear', type=bool, default=False,
+                        help='out with linear layer')
     
+    parser.add_argument('--error_threld', type=float, default=0.5)
 
     parser.add_argument('--a', type=float, default=0.1)
     parser.add_argument('--b', type=float, default=1.)
@@ -50,6 +61,10 @@ def get_opts():
                         help='learning rate')
     parser.add_argument('--num_epochs', type=int, default=1000,
                         help='number of epochs')
+    
+    parser.add_argument('--check_val_every_n_epoch', type=int, default=20,
+                        help='check val every n epoch')
+    
 
     parser.add_argument('--save_dir', type=str, default='logs',
                         help='experiment log dir')
