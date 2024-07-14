@@ -69,7 +69,7 @@ class CoordMLPSystem(LightningModule):
         if  self.pos_encode:
             print("PE Dim: ", self.positional_encoding.out_dim)
 
-        if hparams.arch in ['relu', 'prelu', 'selu', 'tanh',
+        if hparams.arch in ['relu', 'prelu', 'selu', 'tanh', 'sine', 'gabor-wavelet', 'learnable-sine',
                             'sigmoid', 'silu', 'softplus', 'elu',
                             'sinc', 'gaussian', 'quadratic', 
                             'multi-quadratic', 'laplacian', 'super-gaussian', 'expsin']:

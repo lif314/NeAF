@@ -15,11 +15,13 @@ def get_opts():
     
     parser.add_argument('--arch', type=str, default='identity',
                         choices=['fourier', 'hyper', 'bspline', 'siren', 'wire', 'incode',
+                                 'sine', 'gabor-wavelet', 'learnable-sine',
                                  'relu', 'prelu', 'selu', 'tanh',
                                  'sigmoid', 'silu', 'softplus', 'elu',
                                  'sinc', 'gaussian', 'quadratic',
                                  'multi-quadratic', 'laplacian', 'super-gaussian', 'expsin'],
                         help='network structure')
+    
     
     parser.add_argument('--init_type', type=str, default='norm',
                         choices=['uniform', 'norm', 'rand'],

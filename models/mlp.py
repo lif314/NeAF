@@ -83,6 +83,21 @@ def init_weights_selu(m):
             nn.init.normal_(m.weight, std=1 / math.sqrt(num_input))
 
 
+def init_weights_sine(m):
+    with torch.no_grad():
+        if hasattr(m, 'weight'):
+            num_input = m.weight.size(-1)
+            # See supplement Sec. 1.5 for discussion of factor 30
+            m.weight.uniform_(-np.sqrt(6 / num_input) / 30, np.sqrt(6 / num_input) / 30)
+
+def init_weights_sine_first(m):
+    with torch.no_grad():
+        if hasattr(m, 'weight'):
+            num_input = m.weight.size(-1)
+            # See paper sec. 3.2, final paragraph, and supplement Sec. 1.5 for discussion of factor 30
+            m.weight.uniform_(-1 / num_input, 1 / num_input)
+
+
 def init_weights_elu(m):
     if type(m) == BatchLinear or type(m) == nn.Linear:
         if hasattr(m, 'weight'):
@@ -94,8 +109,6 @@ def init_weights_xavier(m):
     if type(m) == BatchLinear or type(m) == nn.Linear:
         if hasattr(m, 'weight'):
             nn.init.xavier_normal_(m.weight)
-
-
 
 # different activation functions
 class SincActivation(nn.Module):
@@ -162,6 +175,43 @@ class ExpSinActivation(nn.Module):
     def forward(self, x):
         return torch.exp(-torch.sin(self.a*x))
 
+# SIREN
+class SirenActivation(nn.Module):
+    def __init__(self, a=1., trainable=True):
+        super().__init__()
+        self.omega_0 = 30.
+        self.register_parameter('a', nn.Parameter(a*torch.ones(1), trainable))
+
+    def forward(self, x):
+        return torch.sin(self.a * self.omega_0 * x)
+
+# WIRE
+class WireActivation(nn.Module):
+    def __init__(self, a=10., b=40., trainable=True):
+        super().__init__()
+
+        self.register_parameter('omega_0', nn.Parameter(a*torch.ones(1), trainable))
+        self.register_parameter('scale_0', nn.Parameter(b*torch.ones(1), trainable))
+
+    def forward(self, x):
+        omega = self.omega_0 * x
+        scale = self.scale_0 * x
+        
+        return torch.exp(1j*omega - scale.abs().square())
+
+# INCODE
+class IncodeActivation(nn.Module):
+    def __init__(self, a=0.1993, b=0.0196, c=0.0588, d=0.0269, trainable=True):
+        super().__init__()
+        self.omega_0 = 30.
+        self.register_parameter('a', nn.Parameter(a*torch.ones(1), trainable))
+        self.register_parameter('b', nn.Parameter(b*torch.ones(1), trainable))
+        self.register_parameter('c', nn.Parameter(c*torch.ones(1), trainable))
+        self.register_parameter('d', nn.Parameter(d*torch.ones(1), trainable))
+
+    def forward(self, x):
+        return torch.exp(self.a) * torch.sin(torch.exp(self.b) * self.omega_0 * x + self.c) + self.d
+
 class MLP(nn.Module):
     def __init__(self,
                  in_features=1,
@@ -174,14 +224,14 @@ class MLP(nn.Module):
                  **kwargs):
         super().__init__()
 
-        nls_and_inits = {'relu':(nn.ReLU(inplace=True), init_weights_normal, None),
+        nls_and_inits = {'elu':(nn.ELU(inplace=True), init_weights_elu, None),
+                        'relu':(nn.ReLU(inplace=True), init_weights_normal, None),
                          'prelu':(nn.PReLU(), init_weights_normal, None),
                          'selu':(nn.SELU(inplace=True), init_weights_selu, None),
+                         'silu':(nn.SiLU(inplace=True), init_weights_normal, None),
                          'tanh':(nn.Tanh(), init_weights_xavier, None),
                          'sigmoid':(nn.Sigmoid(), init_weights_xavier, None),
-                         'silu':(nn.SiLU(inplace=True), init_weights_normal, None),
                          'softplus':(nn.Softplus(), init_weights_normal, None),
-                         'elu':(nn.ELU(inplace=True), init_weights_elu, None),
                          'sinc':(SincActivation(a=kwargs['a'], trainable=act_trainable), init_weights_normal, None),
                          'gaussian':(GaussianActivation(a=kwargs['a'], trainable=act_trainable), init_weights_normal, None),
                          'quadratic':(QuadraticActivation(a=kwargs['a'], trainable=act_trainable), init_weights_normal, None),
@@ -189,8 +239,11 @@ class MLP(nn.Module):
                          'laplacian':(LaplacianActivation(a=kwargs['a'], trainable=act_trainable), init_weights_normal, None),
                          'super-gaussian':(SuperGaussianActivation(a=kwargs['a'], b=kwargs['b'], trainable=act_trainable), init_weights_normal, None),
                          'expsin':(ExpSinActivation(a=kwargs['a'], trainable=act_trainable), init_weights_normal, None),
+                         'sine':(SirenActivation(trainable=False), init_weights_sine, init_weights_sine_first),
+                         'gabor-wavelet':(WireActivation(trainable=True), init_weights_normal, None),
+                         'learnable-sine':(IncodeActivation(trainable=True), init_weights_sine, init_weights_sine_first),
                          }
-        
+
         nl, nl_weight_init, first_layer_init = nls_and_inits[act]
 
         self.weight_init = nl_weight_init

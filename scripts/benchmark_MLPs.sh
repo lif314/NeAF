@@ -1,5 +1,5 @@
 #!/bin/bash
-export CUDA_VISIBLE_DEVICES=1
+export CUDA_VISIBLE_DEVICES=0
 
 datatypes=(bach counting)
 pes=(NeRF FFN None)
@@ -19,22 +19,17 @@ pes=(NeRF FFN None)
 #     laplacian
 #     super-gaussian
 #     expsin
+#     sine
+#     wire
+#     incode
 # )
+
 activations=(
-    selu
-    tanh
-    sigmoid
-    silu
-    softplus
-    elu
-    sinc
-    gaussian
-    quadratic
-    multi-quadratic
-    laplacian
-    super-gaussian
-    expsin
+    sine
+    gabor-wavelet
+    learnable-sine
 )
+
 
 # NeRF 270 K
 # FFN 280 K
