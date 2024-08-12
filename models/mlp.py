@@ -179,7 +179,7 @@ class ExpSinActivation(nn.Module):
 class SirenActivation(nn.Module):
     def __init__(self, a=1., trainable=True):
         super().__init__()
-        self.omega_0 = 30.
+        self.omega_0 = 300.
         self.register_parameter('a', nn.Parameter(a*torch.ones(1), trainable))
 
     def forward(self, x):
@@ -201,9 +201,9 @@ class WireActivation(nn.Module):
 
 # INCODE
 class IncodeActivation(nn.Module):
-    def __init__(self, a=0.1993, b=0.0196, c=0.0588, d=0.0269, trainable=True):
+    def __init__(self, a=0.1993, b=0.0196, c=0.0588, d=0.0269, omega=30., trainable=True):
         super().__init__()
-        self.omega_0 = 30.
+        self.omega_0 = omega
         self.register_parameter('a', nn.Parameter(a*torch.ones(1), trainable))
         self.register_parameter('b', nn.Parameter(b*torch.ones(1), trainable))
         self.register_parameter('c', nn.Parameter(c*torch.ones(1), trainable))
@@ -239,9 +239,11 @@ class MLP(nn.Module):
                          'laplacian':(LaplacianActivation(a=kwargs['a'], trainable=act_trainable), init_weights_normal, None),
                          'super-gaussian':(SuperGaussianActivation(a=kwargs['a'], b=kwargs['b'], trainable=act_trainable), init_weights_normal, None),
                          'expsin':(ExpSinActivation(a=kwargs['a'], trainable=act_trainable), init_weights_normal, None),
-                         'sine':(SirenActivation(trainable=False), init_weights_sine, init_weights_sine_first),
+                         'sine':(SirenActivation(a=kwargs['a'], trainable=False), init_weights_sine, init_weights_sine_first),
+                         'sine_normal':(SirenActivation(a=kwargs['a'], trainable=False), init_weights_normal, None),
+                         'sine_xavier':(SirenActivation(a=kwargs['a'], trainable=False), init_weights_xavier, None),
                          'gabor-wavelet':(WireActivation(trainable=True), init_weights_normal, None),
-                         'learnable-sine':(IncodeActivation(trainable=True), init_weights_sine, init_weights_sine_first),
+                         'learnable-sine':(IncodeActivation(omega=kwargs['hidden_omega_0'],trainable=True), init_weights_sine, init_weights_sine_first),
                          }
 
         nl, nl_weight_init, first_layer_init = nls_and_inits[act]

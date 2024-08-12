@@ -12,6 +12,7 @@ class FrequencyEncoding(nn.Module):
 
         mapping_input = pos_encode_configs['mapping_input']
         use_nyquist = pos_encode_configs['use_nyquist']
+        num_frequencies = pos_encode_configs['num_frequencies']
         self.in_features = in_features
 
         if self.in_features == 3:
@@ -26,7 +27,8 @@ class FrequencyEncoding(nn.Module):
         elif self.in_features == 1:
             # assert fn_samples is not None
             fn_samples = mapping_input
-            self.num_frequencies = 4
+            # self.num_frequencies = 4
+            self.num_frequencies = num_frequencies
             if use_nyquist:
                 self.num_frequencies = self.get_num_frequencies_nyquist(fn_samples)
         else:

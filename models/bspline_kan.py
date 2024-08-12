@@ -2,14 +2,14 @@
 import torch
 import math
 from torch import nn
-import torch.functional as F
+import torch.nn.functional as F
 
 class BsplineKANLayer(torch.nn.Module):
     def __init__(
         self,
         in_features,
         out_features,
-        grid_size=5,
+        gridsize=5,
         spline_order=3,
         scale_noise=0.1,
         scale_base=1.0,
@@ -22,13 +22,13 @@ class BsplineKANLayer(torch.nn.Module):
         super(BsplineKANLayer, self).__init__()
         self.in_features = in_features
         self.out_features = out_features
-        self.grid_size = grid_size
+        self.grid_size = gridsize
         self.spline_order = spline_order
 
-        h = (grid_range[1] - grid_range[0]) / grid_size
+        h = (grid_range[1] - grid_range[0]) / gridsize
         grid = (
             (
-                torch.arange(-spline_order, grid_size + spline_order + 1) * h
+                torch.arange(-spline_order, gridsize + spline_order + 1) * h
                 + grid_range[0]
             )
             .expand(in_features, -1)
@@ -38,7 +38,7 @@ class BsplineKANLayer(torch.nn.Module):
 
         self.base_weight = torch.nn.Parameter(torch.Tensor(out_features, in_features))
         self.spline_weight = torch.nn.Parameter(
-            torch.Tensor(out_features, in_features, grid_size + spline_order)
+            torch.Tensor(out_features, in_features, gridsize + spline_order)
         )
         if enable_standalone_scale_spline:
             self.spline_scaler = torch.nn.Parameter(

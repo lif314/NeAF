@@ -1,8 +1,7 @@
 #!/bin/bash
 export CUDA_VISIBLE_DEVICES=1
 
-# datatypes=(bach counting)
-datatypes=(bach)
+datatypes=(bach counting blues00000)
 
 # SIREN 264 K
 # INCODE  K
@@ -10,7 +9,7 @@ datatypes=(bach)
 # Fourier 254 K
 # archs=(incode wire siren fourier)
 # archs=(wire siren fourier)
-archs=(fourier)
+archs=(bspline)
 
 for type in "${datatypes[@]}"
 do

@@ -5,28 +5,11 @@ datatypes=(blues classical country disco hiphop jazz metal pop reggae rock)
 seq_id=00000
 
 # pes=(NeRF FFN None)
-pes=(NeRF)
-# activations=(
-#     relu
-#     prelu
-#     selu
-#     tanh
-#     sigmoid
-#     silu
-#     softplus
-#     elu
-#     sinc
-#     gaussian
-#     quadratic
-#     multi-quadratic
-#     laplacian
-#     super-gaussian
-#     expsin
-# )
+pes=(None)
 
 activations=(
-    sine_normal
-    sine_xavier
+    fourier
+    bspline
 )
 
 # NeRF 270 K
@@ -39,7 +22,7 @@ do
     data_path=$base_path/$type/$type.$seq_id.wav
     for nonlin in "${activations[@]}"
     do
-        save_dir=logs/benckmark_mlp_gtzan/$type/$nonlin
+        save_dir=logs/benckmark_kan_gtzan/$type/$nonlin
         for pe in "${pes[@]}"
         do
             python train.py --arch $nonlin \

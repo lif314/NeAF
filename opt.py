@@ -15,7 +15,7 @@ def get_opts():
     
     parser.add_argument('--arch', type=str, default='identity',
                         choices=['fourier', 'hyper', 'bspline', 'siren', 'wire', 'incode',
-                                 'sine', 'gabor-wavelet', 'learnable-sine',
+                                 'sine', 'sine_normal', 'sine_xavier', 'gabor-wavelet', 'learnable-sine',
                                  'relu', 'prelu', 'selu', 'tanh',
                                  'sigmoid', 'silu', 'softplus', 'elu',
                                  'sinc', 'gaussian', 'quadratic',
@@ -45,17 +45,31 @@ def get_opts():
     
     parser.add_argument('--error_threld', type=float, default=0.5)
 
+    ###### Positional Encoding
+    # FFN
+    parser.add_argument('--ffn_scale', type=float, default=100.)
+    parser.add_argument('--mapping_input', type=int, default=32)
+    
+    # NeRF
+    parser.add_argument('--num_frequencies', type=int, default=4)
+    # parser.add_argument('--disable_use_nyquist', action='store_false', help='')
+
+    # SIREN
+    parser.add_argument('--first_omega_0', type=float, default=3000.,
+                        help='omega in siren')
+    parser.add_argument('--hidden_omega_0', type=float, default=30.,
+                        help='omega in siren')
+
+
     parser.add_argument('--a', type=float, default=0.1)
     parser.add_argument('--b', type=float, default=1.)
+    
     parser.add_argument('--act_trainable', default=False, action='store_true',
                         help='whether to train activation hyperparameter')
 
     parser.add_argument('--sc', type=float, default=0.1, # default 10.
                         help='fourier feature scale factor (std of the gaussian)')
-    parser.add_argument('--first_omega_0', type=float, default=3000.,
-                        help='omega in siren')
-    parser.add_argument('--hidden_omega_0', type=float, default=30.,
-                        help='omega in siren')
+    
 
     parser.add_argument('--batch_size', type=int, default=8192,
                         help='number of batch size')

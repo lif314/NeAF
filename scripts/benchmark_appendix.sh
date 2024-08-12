@@ -1,35 +1,32 @@
 #!/bin/bash
 export CUDA_VISIBLE_DEVICES=0
 
-datatypes=(gt_bach counting)
+datatypes=(gt_bach.wav gt_counting.wav gt_blues00000.wav gt_english.flac)
+
 pes=(NeRF FFN None)
-# activations=(
-#     relu
-#     prelu
-#     selu
-#     tanh
-#     sigmoid
-#     silu
-#     softplus
-#     elu
-#     sinc
-#     gaussian
-#     quadratic
-#     multi-quadratic
-#     laplacian
-#     super-gaussian
-#     expsin
-#     sine
-#     wire
-#     incode
-# )
 
 activations=(
+    relu
+    prelu
+    selu
+    tanh
+    sigmoid
+    silu
+    softplus
+    elu
+    sinc
+    gaussian
+    quadratic
+    multi-quadratic
+    laplacian
+    super-gaussian
+    expsin
     sine
-    gabor-wavelet
+    wire
+    incode
     learnable-sine
+    gabor-wavelet
 )
-
 
 # NeRF 270 K
 # FFN 280 K
@@ -37,7 +34,7 @@ activations=(
 
 for type in "${datatypes[@]}"
 do
-    data_path=data/siren/gt_$type.wav
+    data_path=data/siren/$type
     for nonlin in "${activations[@]}"
     do
         save_dir=logs/benckmark_mlp/$type/$nonlin

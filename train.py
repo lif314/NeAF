@@ -53,10 +53,15 @@ class CoordMLPSystem(LightningModule):
             pos_encode_configs = {'type': None}
         elif hparams.pe_type == "NeRF":
             # Frequency Encoding (NeRF)
-            pos_encode_configs = {'type':'frequency', 'use_nyquist': True, 'mapping_input': hparams.batch_size}
+            pos_encode_configs = {'type':'frequency', 
+                                  'use_nyquist': False, # Need set True
+                                  'mapping_input': hparams.batch_size,
+                                  'num_frequencies': hparams.num_frequencies}
         elif hparams.pe_type == "FFN":
             # Gaussian Encoding (FFN)
-            pos_encode_configs = {'type':'gaussian', 'scale_B': 100, 'mapping_input': 32}
+            pos_encode_configs = {'type':'gaussian',
+                                  'scale_B': hparams.ffn_scale, 
+                                  'mapping_input': hparams.mapping_input}
 
         self.pos_encode = pos_encode_configs['type']
         if self.pos_encode in Encoding().encoding_dict.keys():
@@ -69,11 +74,12 @@ class CoordMLPSystem(LightningModule):
         if  self.pos_encode:
             print("PE Dim: ", self.positional_encoding.out_dim)
 
-        if hparams.arch in ['relu', 'prelu', 'selu', 'tanh', 'sine', 'gabor-wavelet', 'learnable-sine',
+        if hparams.arch in ['relu', 'prelu', 'selu', 'tanh', 'sine','sine_normal', 'sine_xavier',
+                            'gabor-wavelet', 'learnable-sine',
                             'sigmoid', 'silu', 'softplus', 'elu',
                             'sinc', 'gaussian', 'quadratic', 
                             'multi-quadratic', 'laplacian', 'super-gaussian', 'expsin']:
-            kwargs = {'a': hparams.a, 'b': hparams.b}
+            kwargs = {'a': hparams.a, 'b': hparams.b, 'hidden_omega_0': hparams.hidden_omega_0}
             act = hparams.arch
             if self.pos_encode:
                 n_in = self.positional_encoding.out_dim
@@ -136,11 +142,11 @@ class CoordMLPSystem(LightningModule):
             else:
                 n_in = hparams.in_features
             self.net = BsplineKAN(in_features=n_in,
+                                out_features=hparams.out_features,
                                 hidden_features=hparams.hidden_features,
                                 hidden_layers=hparams.hidden_layers,
-                                out_features=hparams.out_features,
                                 input_grid_size=hparams.input_grid_size,
-                                hidden_grid_size=hparams.hidden_grid_size,
+                                hidden_grid_size=7,
                                 output_grid_size=hparams.output_grid_size,
                                 )
             
