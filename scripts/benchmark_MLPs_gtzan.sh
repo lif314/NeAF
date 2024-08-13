@@ -4,29 +4,27 @@ export CUDA_VISIBLE_DEVICES=0
 datatypes=(blues classical country disco hiphop jazz metal pop reggae rock)
 seq_id=00000
 
-# pes=(NeRF FFN None)
-pes=(NeRF)
-# activations=(
-#     relu
-#     prelu
-#     selu
-#     tanh
-#     sigmoid
-#     silu
-#     softplus
-#     elu
-#     sinc
-#     gaussian
-#     quadratic
-#     multi-quadratic
-#     laplacian
-#     super-gaussian
-#     expsin
-# )
+pes=(NeRF FFN None)
 
 activations=(
-    sine_normal
-    sine_xavier
+    relu
+    prelu
+    selu
+    tanh
+    sigmoid
+    silu
+    softplus
+    elu
+    sinc
+    quadratic
+    multi-quadratic
+    gaussian
+    laplacian
+    super-gaussian
+    expsin
+    gabor-wavelet
+    sine
+    learnable-sine
 )
 
 # NeRF 270 K

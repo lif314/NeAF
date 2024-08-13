@@ -4,25 +4,22 @@
 
 export CUDA_VISIBLE_DEVICES=0
 
-# datatypes=(bach counting blues00000)
-datatypes=(blues00000)
+datatypes=(bach counting blues00000)
+
+
 pes=(FFN)
 activations=(
+    relu
     gaussian
     sine
     learnable-sine
 )
 
-# scales=(1 20 40 60 80 100 1000 10000)
-scales=(1000 10000)
-
-# NeRF 270 K
-# FFN 280 K
-# None 263 K
+scales=(1 20 40 60 80 100 1000 10000)
 
 for type in "${datatypes[@]}"
 do
-    data_path=data/siren/gt_$type.wav
+    data_path=data/demo/gt_$type.wav
     for nonlin in "${activations[@]}"
     do
         save_dir=logs/benckmark_FFN_sigma/$type/$nonlin

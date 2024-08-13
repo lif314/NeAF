@@ -1,52 +1,110 @@
-# ASR-Solver: Unified Continuous Audio Signal Representions via Fourier Kolmogorov-Arnold Networks
+<p align="center">
+  <h1 align="center">
+    Representing Sounds as Neural Amplitude Fields:
+    <br>
+    A Benchmark of Coordinate-MLPs and A Fourier Kolmogorov-Arnold Framework
+  </h1>
+</p>
 
-## Results
+<p align="center">
+  <a href="">
+    <img src="./assets/teaser.png" alt="NeAF teaser" width="100%">
+  </a>
+</p>
 
-### `Counting`
+## What is Neural Amplitude Fields?
+<p align="center">
+  <a href="">
+    <img src="./assets/neaf.png" alt="NeAF" width="90%">
+  </a>
+</p>
 
-|Model| hidden_layers | hidden_features | params | SNR $\uparrow$| LSD $\downarrow$|
-|:--:|:--:|:--:|:--:|:--:|:---:|
-| Siren | 7 | 256 | 198K | 12.80 | 1.65 |
-| Fourier(512) | 4 | 64 | 189K | 11.58 | 1.88 |
-| Fourier(1024) | 4 | 64 | 254K | 12.62 | 1.78 |
+## Environment Configuration
+```
+pip install -r requirements.txt
+```
 
-### `Bach`
+## Benchmark of Coordinate-MLPs in Audio Signal Representations
+### Overview
+<p align="center">
+  <a href="">
+    <img src="./assets/benchmark.png" alt="benchmark" width="100%">
+  </a>
+</p>
 
-|Model| hidden_layers | hidden_features | params | SNR $\uparrow$| LSD $\downarrow$|
-|:--:|:--:|:--:|:--:|:--:|:---:|
-| Siren | 7 | 256 | 198K | 36.21 | 	1.16 |
-| Fourier(512) | 4 | 64 | 189K | 32.70 | 1.29 |
-| Fourier(1024) | 4 | 64 | 254K | 35.20 | 1.11 |
+### Run
+- Testing on ``Bach``, ``Counting``, and ``Blues``.
+```
+bash scripts/benchmark_MLPs_demo.sh
+```
 
+- Testing on ``CSTR VCTK`` dataset.
+```
+bash scripts/benchmark_MLPs_vctk.sh
+```
 
+- Testing on ``GTZAN`` dataset.
+```
+bash scripts/benchmark_MLPs_gtzan.sh
+```
 
-- W/O `grid size`
+## Fourier-ASR: A Fourier Kolmogorov-Arnold Framework
+### Overview
+<p align="center">
+  <a href="">
+    <img src="./assets/fourier.png" alt="fourier" width="100%">
+  </a>
+</p>
 
-|Model| hidden_layers | hidden_features | params | SNR $\uparrow$| LSD $\downarrow$|
-|:--:|:--:|:--:|:--:|:--:|:---:|
-| Siren | 7 | 256 | 198K | 36.22 | 1.16|
-| Siren(3K) | 7 | 256 | 198K | **37.30** | 1.020 |
-| MLP+ReLU | 4 | 256 | 130K | 0 | 2.86 | 
-| Fourier[512,5,3] | 4 | 64 | 189K |  |  |
-| Fourier(Linear) | 4 | 64 | 198K | 12.20 | 2.40 |
-| Fourier,G=8 | 3 | 64 | 198K | 12.00 | 2.40 |
-| Fourier,G=8 | 4 | 64 | 264K | 23.00 | 1.65 |
-| Fourier,G=8 | 5 | 64 | 330K | 31.40 | 1.23 |
-| Fourier,G=8(3K) | 5 | 64 | 330K | 36.30 | **0.963** |
-| Fourier,G=8 | 2 | 128 | 528K | 4.13 | 2.68 |
-| Fourier,G=5 | 5 | 64 | 206K | 12.60 | 2.33 |
+### Run
+- Testing on ``Bach``, ``Counting``, and ``Blues``.
+```
+bash scripts/benchmark_KANs_demo.sh
+```
 
-### GTZAN (blues/00028)
+- Testing on ``CSTR VCTK`` dataset.
+```
+bash scripts/benchmark_KANs_vctk.sh
+```
 
-|Model| hidden_layers | hidden_features | params | SNR $\uparrow$| LSD $\downarrow$|
-|:--:|:--:|:--:|:--:|:--:|:---:|
-| Siren | 3 | 256 | 198K | 12.65 | 3.73 |
-| MLP+ReLU | 3 | 256 | 198K | 0 | 5.92 |
-| Fourier(512) | 4 | 64 | 189K | 10.41 | 4.17 |
-| Fourier(1024) | 4 | 64 | 254K | 13.33 | 3.35 |
+- Testing on ``GTZAN`` dataset.
+```
+bash scripts/benchmark_KANs_gtzan.sh
+```
 
+## Ablation Experiments
+### Positional encoding is parameter-sensitive
+- ``RFF`` positional encoding is sensitive to the dimension parameter $L$.
+```
+bash scripts/benchmark_FFN_L.sh
+```
 
+- ``RFF`` positional encoding is sensitive to the variance parameter $\sigma$.
+```
+bash scripts/benchmark_FFN_sigma.sh
+```
 
-## Related papers
+- ``NeFF`` positional encoding is sensitive to the dimension parameter $L$.
+```
+bash scripts/benchmark_NeRF_L.sh
+```
 
-*  [Implicit Neural Representations with Periodic Activation Functions](https://arxiv.org/pdf/2006.09661.pdf)
+### Activation functions are parameter-sensitive
+- ``Gaussian-type`` activation functions are sensitive to the variance factor $a$.
+```
+bash scripts/benchmark_gaussian.sh
+```
+
+- ``Sine-type`` activation functions are sensitive to the frequency factor $\omega$.
+```
+# Sine
+bash scripts/benchmark_siren.sh
+
+# Incode-Sine
+bash scripts/benchmark_incode-sine.sh
+```
+
+### Periodic activation functions are sensitive to initialization schemes
+```
+bash scripts/benchmark_sensitive_init.sh
+```

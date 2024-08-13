@@ -8,9 +8,6 @@ activations=(
     fourier
 )
 
-# NeRF 270 K
-# FFN 280 K
-# None 263 K
 
 for type in "${datatypes[@]}"
 do

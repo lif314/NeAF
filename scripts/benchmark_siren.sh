@@ -10,16 +10,12 @@ activations=(
     siren
 )
 
-# first_omegas=(3 30 300 3000 30000 300000)
-first_omegas=(30000 300000)
+first_omegas=(3 30 300 3000 30000 300000)
 hidden_omegas=(30)
-# NeRF 270 K
-# FFN 280 K
-# None 263 K
 
 for type in "${datatypes[@]}"
 do
-    data_path=data/siren/gt_$type.wav
+    data_path=data/demo/gt_$type.wav
     for nonlin in "${activations[@]}"
     do
         save_dir=logs/benckmark_siren/$type/$nonlin

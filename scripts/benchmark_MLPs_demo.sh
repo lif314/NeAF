@@ -1,46 +1,36 @@
 #!/bin/bash
 export CUDA_VISIBLE_DEVICES=0
 
-datatypes=(gt_bach counting)
+datatypes=(bach counting blues00000)
 pes=(NeRF FFN None)
-# activations=(
-#     relu
-#     prelu
-#     selu
-#     tanh
-#     sigmoid
-#     silu
-#     softplus
-#     elu
-#     sinc
-#     gaussian
-#     quadratic
-#     multi-quadratic
-#     laplacian
-#     super-gaussian
-#     expsin
-#     sine
-#     wire
-#     incode
-# )
 
 activations=(
-    sine
+    relu
+    prelu
+    selu
+    tanh
+    sigmoid
+    silu
+    softplus
+    elu
+    sinc
+    quadratic
+    multi-quadratic
+    gaussian
+    laplacian
+    super-gaussian
+    expsin
     gabor-wavelet
+    sine
     learnable-sine
 )
 
-
-# NeRF 270 K
-# FFN 280 K
-# None 263 K
-
 for type in "${datatypes[@]}"
 do
-    data_path=data/siren/gt_$type.wav
+    data_path=data/demo/gt_$type.wav
     for nonlin in "${activations[@]}"
     do
-        save_dir=logs/benckmark_mlp/$type/$nonlin
+        save_dir=logs/benckmark_MLPs_demo/$type/$nonlin
         for pe in "${pes[@]}"
         do
             python train.py --arch $nonlin \

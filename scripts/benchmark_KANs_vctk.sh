@@ -1,11 +1,12 @@
 #!/bin/bash
-export CUDA_VISIBLE_DEVICES=1
+export CUDA_VISIBLE_DEVICES=0
 
 ids=(225 234 238 245 248 253 335 345 363 374)
 seqs=(023)
 mic=1
 
 pes=(None)
+
 activations=(
     fourier
     bspline
@@ -24,7 +25,7 @@ do
         data_path=$base_path/p${id}/p${id}_${seq_id}_mic${mic}.flac
         for nonlin in "${activations[@]}"
         do
-            save_dir=logs/benchmark_MLPs_VCTK/p${id}_${seq_id}_mic${mic}/$nonlin
+            save_dir=logs/benchmark_KANs_VCTK/p${id}_${seq_id}_mic${mic}/$nonlin
             for pe in "${pes[@]}"
             do
                 python train.py --arch $nonlin \

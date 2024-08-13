@@ -6,36 +6,30 @@ ids=(225 234 238 245  248 253 335 345 363 374)
 seqs=(023)
 mic=1
 
-# pes=(NeRF FFN None)
-pes=(NeRF)
-
-# activations=(
-#     relu
-#     prelu
-#     selu
-#     tanh
-#     sigmoid
-#     silu
-#     softplus
-#     elu
-#     sinc
-#     gaussian
-#     quadratic
-#     multi-quadratic
-#     laplacian
-#     super-gaussian
-#     expsin
-#     sine
-#     learnable-sine
-# )
+pes=(NeRF FFN None)
 
 activations=(
-    sine_normal
+    relu
+    prelu
+    selu
+    tanh
+    sigmoid
+    silu
+    softplus
+    elu
+    sinc
+    quadratic
+    multi-quadratic
+    gaussian
+    laplacian
+    super-gaussian
+    expsin
+    gabor-wavelet
+    sine
+    learnable-sine
 )
 
-# NeRF 270 K
-# FFN 280 K
-# None 263 K
+
 base_path=data/VCTK/wav48_silence_trimmed
 
 

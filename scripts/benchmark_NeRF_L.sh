@@ -2,7 +2,7 @@
 
 # Positional encodings are parameter sensitive
 
-export CUDA_VISIBLE_DEVICES=1
+export CUDA_VISIBLE_DEVICES=0
 
 datatypes=(bach counting blues00000)
 pes=(NeRF)
@@ -18,10 +18,10 @@ orders=(2 4 8 16 32 64)
 
 for type in "${datatypes[@]}"
 do
-    data_path=data/siren/gt_$type.wav
+    data_path=data/demo/gt_$type.wav
     for nonlin in "${activations[@]}"
     do
-        save_dir=logs/benckmark_NeRF_test/$type/$nonlin
+        save_dir=logs/benckmark_NeRF_L/$type/$nonlin
         for pe in "${pes[@]}"
         do
             for L in "${orders[@]}"

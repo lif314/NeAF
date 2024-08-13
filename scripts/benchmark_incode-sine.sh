@@ -4,8 +4,7 @@
 
 export CUDA_VISIBLE_DEVICES=0
 
-# datatypes=(bach counting blues00000)
-datatypes=(bach counting)
+datatypes=(bach counting blues00000)
 pes=(NeRF FFN None)
 activations=(
     learnable-sine
@@ -13,13 +12,10 @@ activations=(
 
 sine_as=(3 30 300 3000 30000 300000)
 
-# NeRF 270 K
-# FFN 280 K
-# None 263 K
 
 for type in "${datatypes[@]}"
 do
-    data_path=data/siren/gt_$type.wav
+    data_path=data/demo/gt_$type.wav
     for nonlin in "${activations[@]}"
     do
         save_dir=logs/benckmark_incode-sine/$type/$nonlin

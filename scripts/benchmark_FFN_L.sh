@@ -17,13 +17,9 @@ activations=(
 
 orders=(2 4 8 16 32 64 128 256)
 
-# NeRF 270 K
-# FFN 280 K
-# None 263 K
-
 for type in "${datatypes[@]}"
 do
-    data_path=data/siren/gt_$type.wav
+    data_path=data/demo/gt_$type.wav
     for nonlin in "${activations[@]}"
     do
         save_dir=logs/benckmark_FFN_L/$type/$nonlin

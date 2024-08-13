@@ -4,7 +4,6 @@ export CUDA_VISIBLE_DEVICES=0
 datatypes=(blues classical country disco hiphop jazz metal pop reggae rock)
 seq_id=00000
 
-# pes=(NeRF FFN None)
 pes=(None)
 
 activations=(
@@ -22,7 +21,7 @@ do
     data_path=$base_path/$type/$type.$seq_id.wav
     for nonlin in "${activations[@]}"
     do
-        save_dir=logs/benckmark_kan_gtzan/$type/$nonlin
+        save_dir=logs/benckmark_KANs_gtzan/$type/$nonlin
         for pe in "${pes[@]}"
         do
             python train.py --arch $nonlin \
