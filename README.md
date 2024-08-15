@@ -20,9 +20,32 @@
 </p>
 
 ## Environment Configuration
-```
-pip install -r requirements.txt
-```
+- Configure a Python environment and install related dependencies.
+  ```
+  pip install -r requirements.txt
+  ```
+
+- Download the required dataset from the following websites.
+  - CSTR VCTK: https://datashare.ed.ac.uk/handle/10283/3443
+  - GTZAN: https://huggingface.co/datasets/marsyas/gtzan
+  - Bach: https://github.com/vsitzmann/siren/blob/master/data/gt_bach.wav
+  - Counting: https://github.com/vsitzmann/siren/blob/master/data/gt_counting.wav
+- Organize the data set according to the following file structure.
+  ```
+  --data
+    --demo
+      --gt_bach.wav
+      --gt_counting.wav
+      --gt_blues00000.wav  # from GTZAN dataset blues_00000.wav
+    --gtzan
+      --genres
+        --blues
+        ...
+    --VCTK
+      --wav48_silence_trimmed
+        --p231
+        ...
+  ```
 
 ## Benchmark of Coordinate-MLPs in Audio Signal Representations
 ### Overview
