@@ -1,9 +1,12 @@
 <p align="center">
   <h1 align="center">
-    Representing Sounds as Neural Amplitude Fields:
-    <br>
-    A Benchmark of Coordinate-MLPs and A Fourier Kolmogorov-Arnold Framework
+    Representing Sounds as Neural Amplitude Fields: A Benchmark of Coordinate-MLPs and A Fourier Kolmogorov-Arnold Framework
+   <br>
+    [Submitted to AAAI 2025]
   </h1>
+
+  <h3 align="center"><a href="https://neaf-audio.github.io/NeAF-Audio/">🌐Project page</a> | <a href="https://github.com/lif314/GS3LAM">📝Paper (Comming soon)</a></h3>
+  <div align="center"></div>
 </p>
 
 <p align="center">
