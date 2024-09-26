@@ -5,7 +5,7 @@
     <!-- [Submitted to AAAI 2025] -->
   </h1>
 
-  <h3 align="center"><a href="https://neaf-audio.github.io/NeAF-Audio/">🌐Project page</a> | <a href="https://github.com/lif314/GS3LAM">📝Paper (Comming soon)</a></h3>
+  <h3 align="center"><a href="https://neaf-audio.github.io/NeAF-Audio/">🌐Project page</a> | <a href="https://github.com/lif314/NeAF">📝Paper (Comming soon)</a></h3>
   <div align="center"></div>
 </p>
 
