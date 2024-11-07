@@ -134,3 +134,10 @@ bash scripts/benchmark_incode-sine.sh
 ```
 bash scripts/benchmark_sensitive_init.sh
 ```
+
+### Fourier-ASR is parameter-insensitive
+When model capacity is limited, larger $\Omega$ in the input layer improve the performance.
+
+```
+bash scripts/benchmark_Fourier_omega.sh
+```
